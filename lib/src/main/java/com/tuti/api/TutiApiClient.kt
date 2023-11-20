@@ -324,6 +324,25 @@ class TutiApiClient {
         )
     }
 
+    fun inquireNoebsWallet(
+        accountId: String,
+        onResponse: (Double) -> Unit,
+        onError: (TutiResponse?, Exception?) -> Unit
+    ) {
+        // Since you mentioned the server uses SSE, we're assuming it's a GET request
+        sendRequest<Unit, Double, TutiResponse>(
+            method = RequestMethods.GET,
+            URL = "$dapiServer${Operations.NOEBS_WALLET_BALANCE}",
+            requestToBeSent = null,
+            onResponse = { balanceResponse ->
+                onResponse(balanceResponse)
+            },
+            onError = { _, exception ->
+                onError(null, exception)
+            }, params = arrayOf("account_id", accountId),
+        )}
+
+
     @Deprecated(
         message = "Replace with SignUp with new kotlin classes instead.",
         replaceWith = ReplaceWith("SignUp")
@@ -1172,6 +1191,7 @@ class TutiApiClient {
             val requestBody: RequestBody = jsonObjectString.toRequestBody(JSON)
             val requestBuilder: Request.Builder = Request.Builder().url(finalURL)
             requestBuilder.header("Authorization", authToken)
+            requestBuilder.header("Accept", "application/json")
 
             //add additional headers set by the user
             if (headers != null) {

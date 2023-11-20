@@ -2,12 +2,19 @@ package com.tuti.api
 
 
 import com.tuti.api.authentication.SignInRequest
+import com.tuti.api.data.BalanceResponse
 import com.tuti.api.data.TutiResponse
 import com.tuti.api.ebs.EBSRequest
 import com.tuti.model.NotificationFilters
+import com.tuti.model.User
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.fail
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.fail
 import java.util.*
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 internal class TutiApiClientTest {
 
@@ -89,8 +96,8 @@ internal class TutiApiClientTest {
             })
     }
 
-    @Test
-    fun getUserCard() {
+//    @Test
+//    fun getUserCard() {
 //        val tutiApiClient = TutiApiClient()
 //        tutiApiClient.authToken =
 //            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJtb2JpbGUiOiIwMTExNDkzODg1IiwiZXhwIjoxNjY3NDMxNTY5LCJpc3MiOiJub2VicyJ9.DUyUJDTPO68b9f4Jl5dCnt-yIQOGfA94l2C-t7D88JY"
@@ -102,6 +109,38 @@ internal class TutiApiClientTest {
 //
 //            }
 //        })
+//    }
+
+    @Test
+    fun inquireNoebsWallet() {
+        val tutiApiClient = TutiApiClient()
+        tutiApiClient.authToken = "yourTestAuthToken"
+        val expectedResponse = 121342212
+
+        val latch = CountDownLatch(1) // Initialize CountDownLatch with count 1
+
+        var responseReceived: Double? = null
+        var errorOccurred: Exception? = null
+
+        // Call the method
+        tutiApiClient.inquireNoebsWallet("249_ACCT_1", { response ->
+            responseReceived = response
+            latch.countDown() // Decrease the count of the latch, releasing the wait in test
+        }, { _, error ->
+            errorOccurred = error
+            latch.countDown() // Ensure to count down in case of error too
+        })
+
+        // Wait for the operation to complete or timeout
+        val callCompleted = latch.await(5, TimeUnit.SECONDS)
+
+        // Assertions
+        if (callCompleted) {
+            assertEquals(expectedResponse, responseReceived)
+            assertNull(errorOccurred)
+        } else {
+            fail("The call to inquireNoebsWallet did not complete within the expected time.")
+        }
     }
 }
 
