@@ -32,7 +32,7 @@ class TutiApiClient {
         "MFwwDQYJKoZIhvcNAQEBBQADSwAwSAJBANx4gKYSMv3CrWWsxdPfxDxFvl+Is/0kc1dvMI1yNWDXI3AgdI4127KMUOv7gmwZ6SnRsHX/KAM0IPRe0+Sa0vMCAwEAAQ=="
 
     val entertainmentServer = "https://plus.2t.sd/"
-    val dapiServer = "https://blue-violet-2528.fly.dev/"
+    val dapiServer = "https://dapi.nil.sd/"
 
     @Deprecated("")
     constructor(isDevelopment: Boolean) {

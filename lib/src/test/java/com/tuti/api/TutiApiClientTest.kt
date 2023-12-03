@@ -132,7 +132,7 @@ internal class TutiApiClientTest {
         })
 
         // Wait for the operation to complete or timeout
-        val callCompleted = latch.await(5, TimeUnit.SECONDS)
+        val callCompleted = latch.await(10, TimeUnit.SECONDS)
 
         // Assertions
         if (callCompleted) {
