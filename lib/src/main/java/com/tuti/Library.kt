@@ -26,18 +26,13 @@ object Library {
             PAN = tuti_card_pan,
             expiryDate = tuti_card_exp_date
         )
-
         client.SignIn(SignInRequest(
             mobile = tuti_username,
             password = tuti_password
         ),
             onResponse = { signInResponse: SignInResponse ->
-
-
-
                 val token = signInResponse.authorizationJWT
                 client.authToken = token
-
                 client.sendPaymentRequest(
                     paymentRequest = PaymentRequest(
                         mobile = tuti_username,
@@ -47,7 +42,6 @@ object Library {
                     onResponse = {tutiResponse -> println(tutiResponse.uuid) },
                     onError = {tutiResponse, exception ->  }
                 )
-
             },
             onError = { tutiResponse, exception -> })
     }

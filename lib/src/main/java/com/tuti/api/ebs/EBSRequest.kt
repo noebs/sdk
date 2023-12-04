@@ -174,3 +174,12 @@ class EBSRequest {
         return ipin
     }
 }
+
+
+@kotlinx.serialization.Serializable
+data class NoebsTransfer(
+    @SerialName("from_account") val fromAccount: String,
+    @SerialName("to_account") val toAccount: String,
+    @SerialName("amount") val amount: Double,
+    @SerialName("signature") val signature: String
+)

@@ -7,6 +7,7 @@ import com.tuti.api.authentication.SignUpResponse
 import com.tuti.api.data.*
 import com.tuti.api.ebs.EBSRequest
 import com.tuti.api.ebs.EBSResponse
+import com.tuti.api.ebs.NoebsTransfer
 import com.tuti.model.*
 import com.tuti.util.IPINBlockGenerator
 import kotlinx.serialization.*
@@ -951,6 +952,19 @@ class TutiApiClient {
             paymentRequest,
             onResponse,
             onError,
+        )
+    }
+
+    fun noebsTransfer(
+        transaction: NoebsTransfer,
+        onResponse: (TutiResponse) -> Unit,
+        onError: (TutiResponse?, Exception?) -> Unit
+    ) {
+        sendRequest(
+            RequestMethods.POST,
+            dapiServer + Operations.NOEBS_CARD_TRANSFER,
+            transaction,
+            onResponse, onError
         )
     }
 

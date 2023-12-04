@@ -33,6 +33,7 @@ data class TutiResponse(
 
         @SerialName("ebs_response")
         val ebsResponse: EBSResponse = EBSResponse()
+    //TODO(adonese): some of dapi / noebs fields are not exposed here, transaction_id from noebs wallet
 ) {
 
     fun getRawPaymentToken(): String {
