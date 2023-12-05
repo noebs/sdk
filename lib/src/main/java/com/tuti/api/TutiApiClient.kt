@@ -956,14 +956,14 @@ class TutiApiClient {
     }
 
     fun noebsTransfer(
-        transaction: NoebsTransfer,
+        request: NoebsTransfer,
         onResponse: (TutiResponse) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit
     ) {
         sendRequest(
             RequestMethods.POST,
             dapiServer + Operations.NOEBS_CARD_TRANSFER,
-            transaction,
+            request,
             onResponse, onError
         )
     }
