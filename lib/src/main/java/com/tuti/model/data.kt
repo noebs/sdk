@@ -96,3 +96,22 @@ data class DapiTransaction(
 data class DapiResponse(
         val data: List<DapiTransaction>
 )
+
+@Serializable
+data class LedgerResponse(
+        val data: List<Ledger>
+)
+
+@Serializable
+data class Ledger(
+        @SerialName("account_id")
+        val AccountID: String,
+        @SerialName("transaction_id")
+        val TransactionID: String,
+        @SerialName("amount")
+        val Amount: Float,
+        @SerialName("type")
+        val Type: String,
+        @SerialName("time")
+        val Time: Long,
+)

@@ -62,4 +62,6 @@ object Operations {
     const val DAPI_GET_TRANSACTIONS = "transactions"
     const val NOEBS_WALLET_BALANCE = "noebs-balance"
     const val NOEBS_CARD_TRANSFER = "transfer"
+    // transactions
+    const val LEDGER_TRANSACTIONS = "nil/transactions"
 }

@@ -5,6 +5,8 @@ import com.tuti.api.authentication.SignInRequest
 import com.tuti.api.data.TutiResponse
 import com.tuti.api.ebs.EBSRequest
 import com.tuti.api.ebs.NoebsTransfer
+import com.tuti.model.Ledger
+import com.tuti.model.LedgerResponse
 import com.tuti.model.NotificationFilters
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
@@ -167,6 +169,38 @@ internal class TutiApiClientTest {
         // Assertions
         if (callCompleted) {
             assertEquals("ok", responseReceived!!.status)
+            assertNull(errorOccurred)
+        } else {
+            fail("The call to inquireNoebsWallet did not complete within the expected time.")
+        }
+    }
+
+    @Test
+    fun retrieveLedgerTransactions() {
+        val tutiApiClient = TutiApiClient(serverURL = "https://blue-violet-2528-icy-frog-2586.fly.dev/")
+        tutiApiClient.authToken = "yourTestAuthToken"
+        val expectedResponse = 121342212
+
+        val latch = CountDownLatch(1) // Initialize CountDownLatch with count 1
+
+        var responseReceived: List<Ledger>?= null
+        var errorOccurred: Exception? = null
+
+        // Call the method
+        tutiApiClient.retrieveLedgerTransactions("249_ACCT_1", { response ->
+            responseReceived = response
+            latch.countDown() // Decrease the count of the latch, releasing the wait in test
+        }, { _, error ->
+            errorOccurred = error
+            latch.countDown() // Ensure to count down in case of error too
+        })
+
+        // Wait for the operation to complete or timeout
+        val callCompleted = latch.await(10, TimeUnit.SECONDS)
+
+        // Assertions
+        if (callCompleted) {
+            assertEquals(expectedResponse, responseReceived)
             assertNull(errorOccurred)
         } else {
             fail("The call to inquireNoebsWallet did not complete within the expected time.")

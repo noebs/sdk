@@ -22,9 +22,7 @@ import okhttp3.logging.HttpLoggingInterceptor
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
-class TutiApiClient {
-    var serverURL: String? = null
-        private set
+class TutiApiClient(val serverURL: String = "https://beta.app.st.sd/consumer/") {
     var isSingleThreaded = false
     var authToken: String = ""
     var ipinUsername: String = ""
@@ -35,21 +33,6 @@ class TutiApiClient {
     val entertainmentServer = "https://plus.2t.sd/"
     val dapiServer = "https://dapi.nil.sd/"
 
-    @Deprecated("")
-    constructor(isDevelopment: Boolean) {
-        serverURL = getServerURL(isDevelopment)
-    }
-
-
-    constructor() {
-        serverURL = getServerURL(false)
-    }
-
-    private fun getServerURL(development: Boolean): String {
-        val developmentHost = "https://beta.app.2t.sd/consumer/"
-        val productionHost = "https://beta.app.2t.sd/consumer/"
-        return if (development) developmentHost else productionHost
-    }
 
     private fun fillRequestFields(card: Card, ipin: String, amount: Float): EBSRequest {
         val request = EBSRequest()
@@ -1183,6 +1166,23 @@ class TutiApiClient {
             onResponse,
             onError,
             null,
+        )
+    }
+
+
+    fun retrieveLedgerTransactions(
+        accountId: String,
+        onResponse: (List<Ledger>) -> Unit,
+        onError: (TutiResponse?, Exception?) -> Unit
+    ) {
+        sendRequest(
+            RequestMethods.GET,
+            serverURL + Operations.LEDGER_TRANSACTIONS,
+            "",
+            onResponse,
+            onError,
+            null,
+            runOnOwnThread = true, "account_id", accountId
         )
     }
 
