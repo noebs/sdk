@@ -1186,6 +1186,22 @@ class TutiApiClient(val serverURL: String = "https://beta.app.st.sd/consumer/") 
         )
     }
 
+    fun retrieveNoebsTransactions(
+        accountId: String,
+        onResponse: (List<NoebsTransaction>) -> Unit,
+        onError: (TutiResponse?, Exception?) -> Unit
+    ) {
+        sendRequest(
+            RequestMethods.GET,
+            serverURL + Operations.NOEBS_TRANSACTIONS,
+            "",
+            onResponse,
+            onError,
+            null,
+            runOnOwnThread = true, "account_id", accountId
+        )
+    }
+
     inline fun <reified RequestType, reified ResponseType, reified ErrorType> sendRequest(
         method: RequestMethods,
         URL: String,

@@ -64,4 +64,5 @@ object Operations {
     const val NOEBS_CARD_TRANSFER = "transfer"
     // transactions
     const val LEDGER_TRANSACTIONS = "nil/transactions"
+    const val NOEBS_TRANSACTIONS = "ledger/transactions"
 }

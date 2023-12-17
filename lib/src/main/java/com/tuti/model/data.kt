@@ -115,3 +115,22 @@ data class Ledger(
         @SerialName("time")
         val Time: Long,
 )
+
+@Serializable
+data class NoebsTransaction(
+        @SerialName("account_id")
+        val AccountID: String?,
+        @SerialName("transaction_id")
+        val TransactionID: String,
+        @SerialName("amount")
+        val Amount: Float,
+        @SerialName("time")
+        val Time: Long,
+        @SerialName("comment")
+        val comment: String?,
+        @SerialName("from_account")
+        val fromAccount: String?,
+        @SerialName("to_account")
+        val toAccount: String?,
+)
+
