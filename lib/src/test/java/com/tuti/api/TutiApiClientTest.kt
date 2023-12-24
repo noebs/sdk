@@ -5,6 +5,7 @@ import com.tuti.api.authentication.SignInRequest
 import com.tuti.api.data.TutiResponse
 import com.tuti.api.ebs.EBSRequest
 import com.tuti.api.ebs.NoebsTransfer
+import com.tuti.model.KYC
 import com.tuti.model.Ledger
 import com.tuti.model.LedgerResponse
 import com.tuti.model.NoebsTransaction
@@ -235,6 +236,58 @@ internal class TutiApiClientTest {
         if (callCompleted) {
             assertEquals(expectedResponse, responseReceived)
             assertNull(errorOccurred)
+        } else {
+            fail("The call to inquireNoebsWallet did not complete within the expected time.")
+        }
+    }
+
+    @Test
+    fun setNoebsKYC() {
+        val tutiApiClient = TutiApiClient(serverURL = "https://blue-violet-2528-icy-frog-2586.fly.dev/")
+        tutiApiClient.authToken = "yourTestAuthToken"
+        val expectedResponse = """{"code":"bad_request","message":"record not found"}"""
+
+        val latch = CountDownLatch(1) // Initialize CountDownLatch with count 1
+
+        var responseReceived: TutiResponse?= null
+        var errorOccurred: Exception? = null
+        var err: TutiResponse? = null
+
+       val kyc = KYC(
+            birthDate = Date(),
+            issueDate = Date(),
+            expirationDate = Date(),
+            nationalNumber = "123456789",
+            passportNumber = "987654321",
+            gender = KYC.Gender.Male, // Use KYC.Gender.Female for female
+            nationality = "US",
+            holderName = "John Doe",
+            selfie = "selfie.jpg",
+            mobile = "1234567890",
+            passportImage = "passport.jpg"
+        )
+
+        // Call the method
+        tutiApiClient.setNoebsKYC(kyc, { response ->
+
+            responseReceived = response
+            latch.countDown() // Decrease the count of the latch, releasing the wait in test
+        }, { errRes, error ->
+            errorOccurred = error
+            err = errRes
+            latch.countDown() // Ensure to count down in case of error too
+        })
+
+        // Wait for the operation to complete or timeout
+        val callCompleted = latch.await(10, TimeUnit.SECONDS)
+
+        // Assertions
+        if (callCompleted) {
+
+            assertEquals("record not found", err!!.message)
+
+//            assertEquals(expectedResponse, responseReceived)
+//            assertNull(errorOccurred)
         } else {
             fail("The call to inquireNoebsWallet did not complete within the expected time.")
         }

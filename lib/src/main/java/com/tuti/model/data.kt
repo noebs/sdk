@@ -3,9 +3,12 @@ package com.tuti.model
 import com.tuti.api.data.Card
 import com.tuti.api.data.PaymentToken
 import com.tuti.api.ebs.EBSResponse
+import com.tuti.util.GenderSerializer
+import kotlinx.serialization.Contextual
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.descriptors.SerialDescriptor
+import java.util.Date
 
 @Serializable
 data class SignInRequest(
@@ -118,8 +121,6 @@ data class Ledger(
 
 @Serializable
 data class NoebsTransaction(
-        @SerialName("account_id")
-        val AccountID: String?,
         @SerialName("transaction_id")
         val TransactionID: String,
         @SerialName("amount")
@@ -132,5 +133,36 @@ data class NoebsTransaction(
         val fromAccount: String?,
         @SerialName("to_account")
         val toAccount: String?,
+        @SerialName("status")
+        val status: Int,
 )
 
+
+@Serializable
+data class KYC(
+        @Contextual
+        @SerialName("birth_date") val birthDate: Date?,
+        @Contextual
+        @SerialName("issue_date") val issueDate: Date?,
+        @Contextual
+        @SerialName("expiration_date") val expirationDate: Date?,
+        @SerialName("national_number") val nationalNumber: String?,
+        @SerialName("passport_number") val passportNumber: String?,
+        @SerialName("gender") val gender: Gender,
+        @SerialName("nationality") val nationality: String?,
+        @SerialName("holder_name") val holderName: String?,
+        @SerialName("selfie") val selfie: String?,
+        @SerialName("mobile") val mobile: String?,
+        @SerialName("passport_image") val passportImage: String?,
+) {
+        @Serializable(GenderSerializer::class)
+        sealed class Gender {
+                @Serializable
+                @SerialName("male")
+                object Male : Gender()
+
+                @Serializable
+                @SerialName("female")
+                object Female : Gender()
+        }
+}

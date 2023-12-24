@@ -9,9 +9,11 @@ import com.tuti.api.ebs.EBSRequest
 import com.tuti.api.ebs.EBSResponse
 import com.tuti.api.ebs.NoebsTransfer
 import com.tuti.model.*
+import com.tuti.util.DateSerializer
 import com.tuti.util.IPINBlockGenerator
 import kotlinx.serialization.*
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.modules.SerializersModule
 import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -20,9 +22,11 @@ import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.logging.HttpLoggingInterceptor
 import java.io.IOException
+import java.util.Date
 import java.util.concurrent.TimeUnit
 
-class TutiApiClient(val serverURL: String = "https://beta.app.st.sd/consumer/") {
+class TutiApiClient(val serverURL: String = "https://beta.app.st.sd/consumer/",
+    val noebsServer: String = "https://noebs.fly.dev/") {
     var isSingleThreaded = false
     var authToken: String = ""
     var ipinUsername: String = ""
@@ -1202,6 +1206,23 @@ class TutiApiClient(val serverURL: String = "https://beta.app.st.sd/consumer/") 
         )
     }
 
+    fun setNoebsKYC(
+        kyc: KYC,
+        onResponse: (TutiResponse?) -> Unit,
+        onError: (TutiResponse?, Exception?) -> Unit
+    ) {
+        sendRequest(
+            method=RequestMethods.POST,
+
+            URL=noebsServer + Operations.NOEBS_KYC,
+            requestToBeSent = kyc,
+            onResponse = onResponse,
+            onError=onError,
+            null,
+            runOnOwnThread = true,
+        )
+    }
+
     inline fun <reified RequestType, reified ResponseType, reified ErrorType> sendRequest(
         method: RequestMethods,
         URL: String,
@@ -1302,14 +1323,18 @@ class TutiApiClient(val serverURL: String = "https://beta.app.st.sd/consumer/") 
                 return logging
             }
 
-        val okHttpClient: OkHttpClient =
-            OkHttpClient.Builder().addInterceptor(logger).connectTimeout(60, TimeUnit.SECONDS)
-                .readTimeout(60, TimeUnit.SECONDS).writeTimeout(60, TimeUnit.SECONDS).build();
+        val okHttpClient: OkHttpClient = OkHttpClient.Builder()
+            .addInterceptor(HttpLoggingInterceptor().setLevel(HttpLoggingInterceptor.Level.BODY))
+            .connectTimeout(60, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .writeTimeout(60, TimeUnit.SECONDS)
+            .build()
 
         val Json = Json {
             ignoreUnknownKeys = true
             isLenient = true
             encodeDefaults = true
+            serializersModule = SerializersModule { contextual(Date::class, DateSerializer) }
         }
     }
 }
