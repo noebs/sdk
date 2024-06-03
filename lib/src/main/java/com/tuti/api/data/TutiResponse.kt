@@ -2,8 +2,10 @@ package com.tuti.api.data
 
 import com.tuti.api.ebs.EBSResponse
 import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
+import java.io.Serial
 import java.util.*
 
 /**
@@ -24,6 +26,8 @@ data class TutiResponse(
         val token: String = "",
 
         val status: String = "",
+        val details: String = "",
+        @SerialName("data") val data: Data?=null,
 
         @SerialName("due_amount")
         val dueAmount: DueAmount = DueAmount(),
@@ -78,3 +82,13 @@ data class TutiResponse(
         return this.ebsResponse.pubKeyValue
     }
 }
+
+@Serializable
+data class Data (
+    @SerialName("transaction_id") val transactionId: String = "",
+    @SerialName("from_account") val fromAccount: String = "",
+    @SerialName("to_account") val toAccount: String = "",
+    @SerialName("amount") val amount: String = "",
+    @SerialName("uuid") val uuid: String = "",
+    @SerialName("signed_uuid") val signedUUID: String = "",
+)

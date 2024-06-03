@@ -25,18 +25,17 @@ import java.io.IOException
 import java.util.Date
 import java.util.concurrent.TimeUnit
 
-class TutiApiClient(val serverURL: String = "https://beta.app.st.sd/consumer/",
-    val noebsServer: String = "https://noebs.fly.dev/") {
+class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
+    val noebsServer: String = "https://dapi.nil.sd/") {
+
     var isSingleThreaded = false
     var authToken: String = ""
     var ipinUsername: String = ""
     var ipinPassword: String = ""
-    var ebsKey: String =
-        "MFwwDQYJKoZIhvcNAQEBBQADSwAwSAJBANx4gKYSMv3CrWWsxdPfxDxFvl+Is/0kc1dvMI1yNWDXI3AgdI4127KMUOv7gmwZ6SnRsHX/KAM0IPRe0+Sa0vMCAwEAAQ=="
+    var ebsKey: String = "MFwwDQYJKoZIhvcNAQEBBQADSwAwSAJBANx4gKYSMv3CrWWsxdPfxDxFvl+Is/0kc1dvMI1yNWDXI3AgdI4127KMUOv7gmwZ6SnRsHX/KAM0IPRe0+Sa0vMCAwEAAQ=="
 
     val entertainmentServer = "https://plus.2t.sd/"
     val dapiServer = "https://dapi.nil.sd/"
-
 
     private fun fillRequestFields(card: Card, ipin: String, amount: Float): EBSRequest {
         val request = EBSRequest()

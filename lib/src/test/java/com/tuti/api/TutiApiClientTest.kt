@@ -25,7 +25,6 @@ internal class TutiApiClientTest {
         val tutiApiClient = TutiApiClient()
         val uuid = UUID.randomUUID()
         tutiApiClient.getPaymentToken(uuid.toString(), null!!, null!!)
-
     }
 
     @Test
@@ -156,8 +155,10 @@ internal class TutiApiClientTest {
         var responseReceived: TutiResponse? = null
         var errorOccurred: Exception? = null
 
+       // 2024-06-02 23:07:22.056 13114-13412 okhttp.OkHttpClient     sd.nil.app                           I  {"from_account":"0111493885","to_account":"12","amount":100.0,"signature":"","uuid":"1337a79b-3be8-4dc0-9ef9-d86ba99a2d35","signed_uuid":"YmmSJnW9Dvq4n2uda6rqIhsBy3TuzndWdod3m20ma0X3PW+RxQLj/FcYOxcJ4o2Z4Osug8KKO2siHkQRp/DdLIhnsXjS2i+nL8d3KmuxKVSzQ3T2WA6fLcZjEwlYMhUR3T+hCyNA9TU5eCHuvYJ7sMcE96AYPTrP9greQ0itaOERIRtU+twi3wo9Lo0ZlKsyuzPNlE+G4NTJb7R7cVOyegiSIZWrN/Xfi46HVFqjOlxTua8/mDE82Zt76u+W2B8z8Ivkv+70w+9bM4o04c1qdubfjATYGcgYLvUw8nwKKITHm2HkSMPLCyY3reqcCzj2NckkIyUaIRYKdD6H3EB5xQ==","timestamp":"2024-06-02T20:07:22.040Z"}
+
         // Call the method
-        tutiApiClient.noebsTransfer(NoebsTransfer("249_ACCT_1", toAccount = "12", amount = 32.32, signature = ""), { response ->
+        tutiApiClient.noebsTransfer(NoebsTransfer("0111493885", toAccount = "249_ACCT_1", amount = 32.32, signature = "", uuid = "1337a79b-3be8-4dc0-9ef9-d86ba99a2d35", signedUUid = "YmmSJnW9Dvq4n2uda6rqIhsBy3TuzndWdod3m20ma0X3PW+RxQLj/FcYOxcJ4o2Z4Osug8KKO2siHkQRp/DdLIhnsXjS2i+nL8d3KmuxKVSzQ3T2WA6fLcZjEwlYMhUR3T+hCyNA9TU5eCHuvYJ7sMcE96AYPTrP9greQ0itaOERIRtU+twi3wo9Lo0ZlKsyuzPNlE+G4NTJb7R7cVOyegiSIZWrN/Xfi46HVFqjOlxTua8/mDE82Zt76u+W2B8z8Ivkv+70w+9bM4o04c1qdubfjATYGcgYLvUw8nwKKITHm2HkSMPLCyY3reqcCzj2NckkIyUaIRYKdD6H3EB5xQ=="), { response ->
             responseReceived = response
             latch.countDown() // Decrease the count of the latch, releasing the wait in test
         }, { _, error ->

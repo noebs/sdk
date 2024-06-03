@@ -11,6 +11,9 @@ import java.security.spec.InvalidKeySpecException
 import java.security.spec.X509EncodedKeySpec
 import java.text.DateFormat
 import java.text.SimpleDateFormat
+import java.time.Instant
+import java.time.OffsetDateTime
+import java.time.ZoneOffset
 import java.util.*
 import javax.crypto.BadPaddingException
 import javax.crypto.Cipher
@@ -178,8 +181,11 @@ class EBSRequest {
 
 @kotlinx.serialization.Serializable
 data class NoebsTransfer(
-    @SerialName("from_account") val fromAccount: String,
-    @SerialName("to_account") val toAccount: String,
-    @SerialName("amount") val amount: Double,
-    @SerialName("signature") val signature: String
+    @SerialName("from_account") val fromAccount: String?,
+    @SerialName("to_account") val toAccount: String?,
+    @SerialName("amount") val amount: Double?,
+    @SerialName("signature") val signature: String?,
+    @SerialName("uuid") val uuid: String?,
+    @SerialName("signed_uuid") val signedUUid: String?,
+    @SerialName("timestamp") val timestamp: String = OffsetDateTime.ofInstant(Instant.now(), ZoneOffset.UTC).toString()
 )
