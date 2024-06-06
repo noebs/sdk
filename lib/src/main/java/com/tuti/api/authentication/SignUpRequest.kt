@@ -10,7 +10,7 @@ data class SignUpRequest (
     @SerialName("firebase_token")
     val firebaseVerificationID: String? = null,
 
-    @SerialName("user_pubkey")
+    @SerialName("public_key")
     val userPubKey: String? = null,
 
     @SerialName("device_id")
