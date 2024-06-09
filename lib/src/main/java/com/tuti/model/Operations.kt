@@ -44,10 +44,13 @@ object Operations {
     const val QR_STATUS = "qr_status"
     const val QR_COMPLETE = "qr_complete"
     const val VERIFY_FIREBASE = "verify_firebase"
-    const val GeneratePaymentToken = "payment_token"
-    const val QuickPayment = "payment_token/quick_pay"
+
+    const val GeneratePaymentToken = "qr/generate"
+    const val QuickPayment = "qr/pay"
+
+    const val GetPaymentToken = "qr/check"
     const val UpsertFirebaseToken = "user/firebase"
-    const val GetPaymentToken = "payment_token"
+
     const val ChangePassword = "change_password"
     const val TRANSACTION_BY_ID = "transaction"
     const val USER_CARDS = "users/cards"

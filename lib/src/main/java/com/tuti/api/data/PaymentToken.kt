@@ -19,6 +19,8 @@ class PaymentToken(
         @SerialName("UUID")
         val uuid: String = "",
 
+        val mobile: String = "",
+
         @SerialName("note")
         val paymentNote: String = "",
 
