@@ -34,7 +34,7 @@ dependencies {
 
 1. Create an instance of the client
 
-`val tutiApiClient = TutiApiClient()`
+`val tutiApiClient = TutiApiClient()` (defaults to `https://api.noebs.sd/`)
 
 2. Depending on which services you are using, some services need to be authenticated first, we do that this way:
 `tutiApiClient.authToken = token`

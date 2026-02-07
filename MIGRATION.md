@@ -26,6 +26,10 @@ This SDK has been modernized and contains breaking changes. Highlights below are
 - `TutiApiClient.authToken` is now `@Volatile` to avoid stale reads across threads.
 - HTTP logging is now disabled by default; enable explicitly via `TutiApiClient.setHttpLoggingLevel(...)`.
 
+## Default Base URL
+
+- `TutiApiClient()` now defaults to `https://api.noebs.sd/` for both `serverURL` (consumer API) and `noebsServer` (wallet/ws/root routes).
+
 ## Crypto/Base64
 
 - IPIN encryption code no longer depends on jersey Base64 or commons-codec.

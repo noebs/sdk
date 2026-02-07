@@ -59,8 +59,10 @@ import java.io.IOException
 import java.util.Date
 import java.util.concurrent.TimeUnit
 
-class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
-    val noebsServer: String = "https://dapi.nil.sd/") {
+class TutiApiClient(
+    val serverURL: String = "https://api.noebs.sd/",
+    val noebsServer: String = "https://api.noebs.sd/",
+) {
 
     var isSingleThreaded = false
     @Volatile var authToken: String = ""
@@ -69,7 +71,6 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     var ebsKey: String = "MFwwDQYJKoZIhvcNAQEBBQADSwAwSAJBANx4gKYSMv3CrWWsxdPfxDxFvl+Is/0kc1dvMI1yNWDXI3AgdI4127KMUOv7gmwZ6SnRsHX/KAM0IPRe0+Sa0vMCAwEAAQ=="
 
     val entertainmentServer = "https://plus.2t.sd/"
-    val dapiServer = "https://dapi.nil.sd/"
 
     private val consumerURL = normalizeConsumerBase(serverURL)
     private val noebsBaseURL = ensureTrailingSlash(noebsServer)
@@ -186,7 +187,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
         onResponse: (DapiResponse) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit
     ) {
-        sendRequest(method = RequestMethods.GET, dapiServer+Operations.DAPI_GET_TRANSACTIONS,
+        sendRequest(method = RequestMethods.GET, consumerURL + Operations.DAPI_GET_TRANSACTIONS,
             onResponse=onResponse, onError=onError, requestToBeSent = 1)
     }
 
@@ -461,7 +462,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
         // Since you mentioned the server uses SSE, we're assuming it's a GET request
         sendRequest<Unit, Double, TutiResponse>(
             method = RequestMethods.GET,
-            URL = "$dapiServer${Operations.NOEBS_WALLET_BALANCE}",
+            URL = noebsBaseURL + Operations.NOEBS_WALLET_BALANCE,
             requestToBeSent = null,
             onResponse = { balanceResponse ->
                 onResponse(balanceResponse)
@@ -1386,7 +1387,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.POST,
-            dapiServer + Operations.NOEBS_CARD_TRANSFER,
+            noebsBaseURL + Operations.NOEBS_CARD_TRANSFER,
             request,
             onResponse, onError
         )
