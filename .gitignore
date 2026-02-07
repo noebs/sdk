@@ -14,3 +14,6 @@ local.properties
 .idea/*
 
 lib/.settings
+
+# Local JDK downloads (used for running Gradle in dev/CI-less environments)
+.jdk/

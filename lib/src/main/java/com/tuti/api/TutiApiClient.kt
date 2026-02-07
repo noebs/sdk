@@ -1,5 +1,9 @@
 package com.tuti.api
 
+import com.tuti.api.authentication.AuthMeResponse
+import com.tuti.api.authentication.CompleteProfileRequest
+import com.tuti.api.authentication.GoogleAuthRequest
+import com.tuti.api.authentication.OAuthSignInResponse
 import com.tuti.api.authentication.SignInRequest
 import com.tuti.api.authentication.SignInResponse
 import com.tuti.api.authentication.SignUpRequest
@@ -8,18 +12,48 @@ import com.tuti.api.data.*
 import com.tuti.api.ebs.EBSRequest
 import com.tuti.api.ebs.EBSResponse
 import com.tuti.api.ebs.NoebsTransfer
+import com.tuti.api.wallet.v1.CompleteOwnershipVerificationBody
+import com.tuti.api.wallet.v1.ConfirmUser2FABody
+import com.tuti.api.wallet.v1.CreateWithdrawalDestinationBody
+import com.tuti.api.wallet.v1.DeactivateWithdrawalDestinationBody
+import com.tuti.api.wallet.v1.DepositRequest
+import com.tuti.api.wallet.v1.DisableUser2FABody
+import com.tuti.api.wallet.v1.EnrollUser2FABody
+import com.tuti.api.wallet.v1.EnsureWalletRequest
+import com.tuti.api.wallet.v1.FundingSourceList
+import com.tuti.api.wallet.v1.ManualTransferRequest
+import com.tuti.api.wallet.v1.OwnershipVerification
+import com.tuti.api.wallet.v1.P2PTransferRequest
+import com.tuti.api.wallet.v1.RequestOwnershipVerificationBody
+import com.tuti.api.wallet.v1.RpcStatus
+import com.tuti.api.wallet.v1.SetWalletPINBody
+import com.tuti.api.wallet.v1.SignalManualTransferDecisionBody
+import com.tuti.api.wallet.v1.SignalWithdrawalApprovalBody
+import com.tuti.api.wallet.v1.SignalWithdrawalVerificationBody
+import com.tuti.api.wallet.v1.User2FASetup
+import com.tuti.api.wallet.v1.Wallet
+import com.tuti.api.wallet.v1.WithdrawalDestination
+import com.tuti.api.wallet.v1.WithdrawalDestinationList
+import com.tuti.api.wallet.v1.WithdrawalRequest
+import com.tuti.api.wallet.v1.WorkflowRun
 import com.tuti.model.*
 import com.tuti.util.DateSerializer
 import com.tuti.util.IPINBlockGenerator
 import kotlinx.serialization.*
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.modules.SerializersModule
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
 import okhttp3.logging.HttpLoggingInterceptor
 import java.io.IOException
 import java.util.Date
@@ -29,13 +63,32 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     val noebsServer: String = "https://dapi.nil.sd/") {
 
     var isSingleThreaded = false
-    var authToken: String = ""
+    @Volatile var authToken: String = ""
     var ipinUsername: String = ""
     var ipinPassword: String = ""
     var ebsKey: String = "MFwwDQYJKoZIhvcNAQEBBQADSwAwSAJBANx4gKYSMv3CrWWsxdPfxDxFvl+Is/0kc1dvMI1yNWDXI3AgdI4127KMUOv7gmwZ6SnRsHX/KAM0IPRe0+Sa0vMCAwEAAQ=="
 
     val entertainmentServer = "https://plus.2t.sd/"
     val dapiServer = "https://dapi.nil.sd/"
+
+    private val consumerURL = normalizeConsumerBase(serverURL)
+    private val noebsBaseURL = ensureTrailingSlash(noebsServer)
+    private val walletBaseURL = noebsBaseURL + "wallet"
+
+    /**
+     * Wallet API (gRPC-gateway) backing the `/wallet` endpoints (see `proto/noebs/wallet/v1/wallet.proto`).
+     */
+    val wallet: WalletApi = WalletApi()
+
+    private fun ensureTrailingSlash(url: String): String {
+        val trimmed = url.trim()
+        return if (trimmed.endsWith("/")) trimmed else "$trimmed/"
+    }
+
+    private fun normalizeConsumerBase(url: String): String {
+        val base = ensureTrailingSlash(url)
+        return if (base.contains("/consumer/")) base else base + "consumer/"
+    }
 
     private fun fillRequestFields(card: Card, ipin: String, amount: Float): EBSRequest {
         val request = EBSRequest()
@@ -59,7 +112,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.SIGN_IN,
+            consumerURL + Operations.SIGN_IN,
             credentials,
             onResponse,
             onError
@@ -73,7 +126,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.SIGN_IN,
+            consumerURL + Operations.SIGN_IN,
             credentials,
             onResponse,
             onError
@@ -90,7 +143,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.ChangePassword,
+            consumerURL + Operations.ChangePassword,
             credentials,
             onResponse,
             onError,
@@ -125,12 +178,29 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
         )
     }
 
+    @Deprecated(
+        message = "Use getTransactions() to call the /consumer/transactions endpoint.",
+        replaceWith = ReplaceWith("getTransactions")
+    )
     fun getDumpTransactions(
         onResponse: (DapiResponse) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit
     ) {
         sendRequest(method = RequestMethods.GET, dapiServer+Operations.DAPI_GET_TRANSACTIONS,
             onResponse=onResponse, onError=onError, requestToBeSent = 1)
+    }
+
+    fun getTransactions(
+        onResponse: (List<EBSResponse>) -> Unit,
+        onError: (TutiResponse?, Exception?) -> Unit
+    ) {
+        sendRequest(
+            RequestMethods.GET,
+            consumerURL + Operations.DAPI_GET_TRANSACTIONS,
+            "",
+            onResponse,
+            onError
+        )
     }
     fun EntertainmentSendTranser(
         card: Card,
@@ -167,7 +237,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.GET,
-            serverURL + Operations.USER_PROFILE,
+            consumerURL + Operations.USER_PROFILE,
             "",
             onResponse = onResponse,
             onError = onError,
@@ -183,10 +253,40 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.PUT,
-            serverURL + Operations.USER_PROFILE,
+            consumerURL + Operations.USER_PROFILE,
             userProfile,
             onResponse = onResponse,
             onError = onError,
+        )
+    }
+
+    fun getUserLanguage(
+        onResponse: (UserLanguageResponse) -> Unit,
+        onError: (TutiResponse?, Exception?) -> Unit
+    ) {
+        sendRequest(
+            RequestMethods.GET,
+            consumerURL + Operations.USER_LANGUAGE,
+            "",
+            onResponse,
+            onError
+        )
+    }
+
+    fun setUserLanguage(
+        language: String,
+        onResponse: (UserProfileResult) -> Unit,
+        onError: (TutiResponse?, Exception?) -> Unit
+    ) {
+        sendRequest(
+            RequestMethods.PUT,
+            consumerURL + Operations.USER_LANGUAGE,
+            "",
+            onResponse,
+            onError,
+            null,
+            "language",
+            language
         )
     }
 
@@ -207,7 +307,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.SINGLE_SIGN_IN,
+            consumerURL + Operations.SINGLE_SIGN_IN,
             credentials,
             onResponse,
             onError
@@ -228,7 +328,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.GENERATE_LOGIN_OTP,
+            consumerURL + Operations.GENERATE_LOGIN_OTP,
             credentials,
             onResponse,
             onError
@@ -253,7 +353,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.GENERATE_LOGIN_OTP_INSECURE,
+            consumerURL + Operations.GENERATE_LOGIN_OTP_INSECURE,
             credentials,
             onResponse,
             onError
@@ -268,7 +368,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.VERIFY_OTP,
+            consumerURL + Operations.VERIFY_OTP,
             credentials,
             onResponse,
             onError
@@ -282,7 +382,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.OTP_2FA,
+            consumerURL + Operations.OTP_2FA,
             credentials,
             onResponse,
             onError
@@ -304,13 +404,55 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.REFRESH_TOKEN,
+            consumerURL + Operations.REFRESH_TOKEN,
             credentials,
             onResponse,
             onError
         )
     }
 
+    fun googleAuth(
+        request: GoogleAuthRequest,
+        onResponse: (OAuthSignInResponse) -> Unit,
+        onError: (TutiResponse?, Exception?) -> Unit
+    ) {
+        sendRequest(
+            RequestMethods.POST,
+            consumerURL + Operations.AUTH_GOOGLE,
+            request,
+            onResponse,
+            onError
+        )
+    }
+
+    fun completeProfile(
+        request: CompleteProfileRequest,
+        onResponse: (SignInResponse) -> Unit,
+        onError: (TutiResponse?, Exception?) -> Unit
+    ) {
+        sendRequest(
+            RequestMethods.POST,
+            consumerURL + Operations.AUTH_COMPLETE_PROFILE,
+            request,
+            onResponse,
+            onError
+        )
+    }
+
+    fun authMe(
+        onResponse: (AuthMeResponse) -> Unit,
+        onError: (TutiResponse?, Exception?) -> Unit
+    ) {
+        sendRequest(
+            RequestMethods.GET,
+            consumerURL + Operations.AUTH_ME,
+            "",
+            onResponse,
+            onError
+        )
+    }
+
+    @Deprecated("Noebs wallet endpoints are not part of the current /consumer API.")
     fun inquireNoebsWallet(
         accountId: String,
         onResponse: (Double) -> Unit,
@@ -329,6 +471,304 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
             }, params = arrayOf("account_id", accountId),
         )}
 
+    /**
+     * Wallet API client (v1) mapping to the gRPC-gateway `/wallet` endpoints.
+     *
+     * Notes:
+     * - Wallet endpoints return gRPC status errors (google.rpc.Status), represented as [RpcStatus] here.
+     * - Many wallet requests require `tenantId` explicitly.
+     */
+    inner class WalletApi {
+
+        fun ensureWallet(
+            request: EnsureWalletRequest,
+            onResponse: (Wallet) -> Unit,
+            onError: (RpcStatus?, Exception?) -> Unit,
+        ) {
+            sendRequest<EnsureWalletRequest, Wallet, RpcStatus>(
+                method = RequestMethods.POST,
+                URL = walletBaseURL,
+                requestToBeSent = request,
+                onResponse = onResponse,
+                onError = onError,
+            )
+        }
+
+        fun getWallet(
+            walletId: String,
+            tenantId: String,
+            onResponse: (Wallet) -> Unit,
+            onError: (RpcStatus?, Exception?) -> Unit,
+        ) {
+            sendRequest<String, Wallet, RpcStatus>(
+                method = RequestMethods.GET,
+                URL = "$walletBaseURL/$walletId",
+                requestToBeSent = "",
+                onResponse = onResponse,
+                onError = onError,
+                params = arrayOf("tenantId", tenantId),
+            )
+        }
+
+        fun listFundingSources(
+            walletId: String,
+            tenantId: String,
+            onResponse: (FundingSourceList) -> Unit,
+            onError: (RpcStatus?, Exception?) -> Unit,
+        ) {
+            sendRequest<String, FundingSourceList, RpcStatus>(
+                method = RequestMethods.GET,
+                URL = "$walletBaseURL/$walletId/funding_sources",
+                requestToBeSent = "",
+                onResponse = onResponse,
+                onError = onError,
+                params = arrayOf("tenantId", tenantId),
+            )
+        }
+
+        fun listWithdrawalDestinations(
+            walletId: String,
+            tenantId: String,
+            activeOnly: Boolean = false,
+            onResponse: (WithdrawalDestinationList) -> Unit,
+            onError: (RpcStatus?, Exception?) -> Unit,
+        ) {
+            val params = mutableListOf("tenantId", tenantId)
+            if (activeOnly) {
+                params.addAll(listOf("activeOnly", "true"))
+            }
+            sendRequest<String, WithdrawalDestinationList, RpcStatus>(
+                method = RequestMethods.GET,
+                URL = "$walletBaseURL/$walletId/destinations",
+                requestToBeSent = "",
+                onResponse = onResponse,
+                onError = onError,
+                params = params.toTypedArray(),
+            )
+        }
+
+        fun createWithdrawalDestination(
+            walletId: String,
+            request: CreateWithdrawalDestinationBody,
+            onResponse: (WithdrawalDestination) -> Unit,
+            onError: (RpcStatus?, Exception?) -> Unit,
+        ) {
+            sendRequest<CreateWithdrawalDestinationBody, WithdrawalDestination, RpcStatus>(
+                method = RequestMethods.POST,
+                URL = "$walletBaseURL/$walletId/destinations",
+                requestToBeSent = request,
+                onResponse = onResponse,
+                onError = onError,
+            )
+        }
+
+        fun deactivateWithdrawalDestination(
+            destinationId: Long,
+            request: DeactivateWithdrawalDestinationBody,
+            onResponse: () -> Unit,
+            onError: (RpcStatus?, Exception?) -> Unit,
+        ) {
+            sendRequest<DeactivateWithdrawalDestinationBody, Unit, RpcStatus>(
+                method = RequestMethods.POST,
+                URL = "$walletBaseURL/destinations/$destinationId/deactivate",
+                requestToBeSent = request,
+                onResponse = { _ -> onResponse() },
+                onError = onError,
+            )
+        }
+
+        fun requestOwnershipVerification(
+            destinationId: Long,
+            request: RequestOwnershipVerificationBody,
+            onResponse: (OwnershipVerification) -> Unit,
+            onError: (RpcStatus?, Exception?) -> Unit,
+        ) {
+            sendRequest<RequestOwnershipVerificationBody, OwnershipVerification, RpcStatus>(
+                method = RequestMethods.POST,
+                URL = "$walletBaseURL/destinations/$destinationId/verify",
+                requestToBeSent = request,
+                onResponse = onResponse,
+                onError = onError,
+            )
+        }
+
+        fun completeOwnershipVerification(
+            verificationId: Long,
+            request: CompleteOwnershipVerificationBody,
+            onResponse: () -> Unit,
+            onError: (RpcStatus?, Exception?) -> Unit,
+        ) {
+            sendRequest<CompleteOwnershipVerificationBody, Unit, RpcStatus>(
+                method = RequestMethods.POST,
+                URL = "$walletBaseURL/ownership_verifications/$verificationId/complete",
+                requestToBeSent = request,
+                onResponse = { _ -> onResponse() },
+                onError = onError,
+            )
+        }
+
+        fun setWalletPin(
+            walletId: String,
+            request: SetWalletPINBody,
+            onResponse: () -> Unit,
+            onError: (RpcStatus?, Exception?) -> Unit,
+        ) {
+            sendRequest<SetWalletPINBody, Unit, RpcStatus>(
+                method = RequestMethods.POST,
+                URL = "$walletBaseURL/$walletId/pin",
+                requestToBeSent = request,
+                onResponse = { _ -> onResponse() },
+                onError = onError,
+            )
+        }
+
+        fun requestP2PTransfer(
+            request: P2PTransferRequest,
+            onResponse: (WorkflowRun) -> Unit,
+            onError: (RpcStatus?, Exception?) -> Unit,
+        ) {
+            sendRequest<P2PTransferRequest, WorkflowRun, RpcStatus>(
+                method = RequestMethods.POST,
+                URL = "$walletBaseURL/p2p",
+                requestToBeSent = request,
+                onResponse = onResponse,
+                onError = onError,
+            )
+        }
+
+        fun requestDeposit(
+            request: DepositRequest,
+            onResponse: (WorkflowRun) -> Unit,
+            onError: (RpcStatus?, Exception?) -> Unit,
+        ) {
+            sendRequest<DepositRequest, WorkflowRun, RpcStatus>(
+                method = RequestMethods.POST,
+                URL = "$walletBaseURL/deposits",
+                requestToBeSent = request,
+                onResponse = onResponse,
+                onError = onError,
+            )
+        }
+
+        fun requestWithdrawal(
+            request: WithdrawalRequest,
+            onResponse: (WorkflowRun) -> Unit,
+            onError: (RpcStatus?, Exception?) -> Unit,
+        ) {
+            sendRequest<WithdrawalRequest, WorkflowRun, RpcStatus>(
+                method = RequestMethods.POST,
+                URL = "$walletBaseURL/withdrawals",
+                requestToBeSent = request,
+                onResponse = onResponse,
+                onError = onError,
+            )
+        }
+
+        fun signalWithdrawalApproval(
+            workflowId: String,
+            request: SignalWithdrawalApprovalBody,
+            onResponse: () -> Unit,
+            onError: (RpcStatus?, Exception?) -> Unit,
+        ) {
+            sendRequest<SignalWithdrawalApprovalBody, Unit, RpcStatus>(
+                method = RequestMethods.POST,
+                URL = "$walletBaseURL/withdrawals/$workflowId/approval",
+                requestToBeSent = request,
+                onResponse = { _ -> onResponse() },
+                onError = onError,
+            )
+        }
+
+        fun signalWithdrawalVerification(
+            workflowId: String,
+            request: SignalWithdrawalVerificationBody,
+            onResponse: () -> Unit,
+            onError: (RpcStatus?, Exception?) -> Unit,
+        ) {
+            sendRequest<SignalWithdrawalVerificationBody, Unit, RpcStatus>(
+                method = RequestMethods.POST,
+                URL = "$walletBaseURL/withdrawals/$workflowId/verification",
+                requestToBeSent = request,
+                onResponse = { _ -> onResponse() },
+                onError = onError,
+            )
+        }
+
+        fun requestManualTransfer(
+            request: ManualTransferRequest,
+            onResponse: (WorkflowRun) -> Unit,
+            onError: (RpcStatus?, Exception?) -> Unit,
+        ) {
+            sendRequest<ManualTransferRequest, WorkflowRun, RpcStatus>(
+                method = RequestMethods.POST,
+                URL = "$walletBaseURL/manual_transfers",
+                requestToBeSent = request,
+                onResponse = onResponse,
+                onError = onError,
+            )
+        }
+
+        fun signalManualTransferDecision(
+            workflowId: String,
+            request: SignalManualTransferDecisionBody,
+            onResponse: () -> Unit,
+            onError: (RpcStatus?, Exception?) -> Unit,
+        ) {
+            sendRequest<SignalManualTransferDecisionBody, Unit, RpcStatus>(
+                method = RequestMethods.POST,
+                URL = "$walletBaseURL/manual_transfers/$workflowId/decision",
+                requestToBeSent = request,
+                onResponse = { _ -> onResponse() },
+                onError = onError,
+            )
+        }
+
+        fun enrollUser2FA(
+            userId: Long,
+            request: EnrollUser2FABody,
+            onResponse: (User2FASetup) -> Unit,
+            onError: (RpcStatus?, Exception?) -> Unit,
+        ) {
+            sendRequest<EnrollUser2FABody, User2FASetup, RpcStatus>(
+                method = RequestMethods.POST,
+                URL = "$walletBaseURL/users/$userId/2fa/enroll",
+                requestToBeSent = request,
+                onResponse = onResponse,
+                onError = onError,
+            )
+        }
+
+        fun confirmUser2FA(
+            userId: Long,
+            request: ConfirmUser2FABody,
+            onResponse: () -> Unit,
+            onError: (RpcStatus?, Exception?) -> Unit,
+        ) {
+            sendRequest<ConfirmUser2FABody, Unit, RpcStatus>(
+                method = RequestMethods.POST,
+                URL = "$walletBaseURL/users/$userId/2fa/confirm",
+                requestToBeSent = request,
+                onResponse = { _ -> onResponse() },
+                onError = onError,
+            )
+        }
+
+        fun disableUser2FA(
+            userId: Long,
+            request: DisableUser2FABody,
+            onResponse: () -> Unit,
+            onError: (RpcStatus?, Exception?) -> Unit,
+        ) {
+            sendRequest<DisableUser2FABody, Unit, RpcStatus>(
+                method = RequestMethods.POST,
+                URL = "$walletBaseURL/users/$userId/2fa/disable",
+                requestToBeSent = request,
+                onResponse = { _ -> onResponse() },
+                onError = onError,
+            )
+        }
+    }
+
 
     @Deprecated(
         message = "Replace with SignUp with new kotlin classes instead.",
@@ -346,7 +786,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.SIGN_UP,
+            consumerURL + Operations.SIGN_UP,
             signUpRequest,
             onResponse,
             onError
@@ -360,7 +800,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.SIGN_UP,
+            consumerURL + Operations.SIGN_UP,
             signUpRequest,
             onResponse,
             onError
@@ -374,7 +814,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.SIGN_UP_WITH_CARD,
+            consumerURL + Operations.SIGN_UP_WITH_CARD,
             signUpRequest,
             onResponse,
             onError,
@@ -388,11 +828,10 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.GET,
-            serverURL + Operations.NOTIFICATIONS,
+            consumerURL + Operations.NOTIFICATIONS,
             filters.mobile,
             onResponse,
             onError, null,
-            runOnOwnThread = true,
             "mobile", filters.mobile, "all", if (filters.getAll) "true" else "false"
         )
     }
@@ -406,6 +845,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
      * @param onResponse
      * @param onError
      */
+    @Deprecated("verify_firebase was removed from the noebs API; use VerifyOtp or auth flows instead.")
     fun VerifyFirebase(
         signUpRequest: SignUpRequest?,
         onResponse: (SignUpResponse) -> Unit,
@@ -413,7 +853,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.VERIFY_FIREBASE,
+            consumerURL + Operations.VERIFY_FIREBASE,
             signUpRequest,
             onResponse,
             onError,
@@ -441,7 +881,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.GET,
-            serverURL + Operations.GET_CARDS,
+            consumerURL + Operations.GET_CARDS,
             "",
             onResponse,
             onError,
@@ -455,7 +895,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.PUBLIC_KEY,
+            consumerURL + Operations.PUBLIC_KEY,
             ebsRequest,
             onResponse,
             onError,
@@ -469,7 +909,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.IPIN_key,
+            consumerURL + Operations.IPIN_key,
             ebsRequest,
             onResponse,
             onError
@@ -483,7 +923,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.SUBMIT_CONTACTS,
+            consumerURL + Operations.SUBMIT_CONTACTS,
             contacts,
             onResponse,
             onError,
@@ -498,7 +938,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
 
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.BENEFICIARY,
+            consumerURL + Operations.BENEFICIARY,
             beneficiary,
             onResponse,
             onError,
@@ -511,7 +951,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.GET,
-            serverURL + Operations.BENEFICIARY,
+            consumerURL + Operations.BENEFICIARY,
             "",
             onResponse,
             onError,
@@ -525,7 +965,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.DELETE,
-            serverURL + Operations.BENEFICIARY,
+            consumerURL + Operations.BENEFICIARY,
             beneficiary,
             onResponse,
             onError,
@@ -539,7 +979,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.ADD_CARD,
+            consumerURL + Operations.ADD_CARD,
             listOf(card),
             onResponse,
             onError,
@@ -553,7 +993,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.PUT,
-            serverURL + Operations.EDIT_CARD,
+            consumerURL + Operations.EDIT_CARD,
             card,
             onResponse,
             onError,
@@ -567,7 +1007,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.DELETE,
-            serverURL + Operations.DELETE_CARD,
+            consumerURL + Operations.DELETE_CARD,
             card,
             onResponse,
             onError,
@@ -595,7 +1035,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
 
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.GET_BALANCE,
+            consumerURL + Operations.GET_BALANCE,
             request,
             onResponse,
             onError,
@@ -615,15 +1055,13 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
         billInfo: BillInfo,
         onResponse: (TutiResponse) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit,
-        runOnOwnThread: Boolean = true,
-    ): Thread {
+    ): Call {
         return sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.Get_Bills,
+            consumerURL + Operations.Get_Bills,
             billInfo,
             onResponse,
             onError,
-            runOnOwnThread = runOnOwnThread
         )
     }
 
@@ -641,7 +1079,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
         request.deviceId = deviceId
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.CARD_TRANSFER,
+            consumerURL + Operations.CARD_TRANSFER,
             request,
             onResponse,
             onError,
@@ -662,7 +1100,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
         request.deviceId = deviceId
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.P2P_MOBILE,
+            consumerURL + Operations.P2P_MOBILE,
             request,
             onResponse,
             onError,
@@ -683,7 +1121,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
         request.paymentInfo = bashairType.bashairInfo(paymentValue)
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.BILL_PAYMENT,
+            consumerURL + Operations.BILL_PAYMENT,
             request,
             onResponse,
             onError,
@@ -705,7 +1143,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
         request.deviceId = deviceId
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.GENERATE_VOUCHER,
+            consumerURL + Operations.GENERATE_VOUCHER,
             request,
             onResponse,
             onError
@@ -726,7 +1164,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
         request.paymentInfo = (E15(true, invoice, ""))
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.BILL_PAYMENT,
+            consumerURL + Operations.BILL_PAYMENT,
             request,
             onResponse,
             onError
@@ -748,7 +1186,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
 
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.BILL_PAYMENT,
+            consumerURL + Operations.BILL_PAYMENT,
             request,
             onResponse,
             onError,
@@ -769,7 +1207,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
         request.paymentInfo = (MOHEArab("", "", courseId, admissionType))
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.BILL_PAYMENT,
+            consumerURL + Operations.BILL_PAYMENT,
             request,
             onResponse,
             onError,
@@ -791,7 +1229,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
         request.paymentInfo = (MOHE(seatNumber, courseId, admissionType))
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.BILL_PAYMENT,
+            consumerURL + Operations.BILL_PAYMENT,
             request,
             onResponse,
             onError
@@ -811,7 +1249,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
         request.paymentInfo = ("customerBillerRef=$customerRef")
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.BILL_PAYMENT,
+            consumerURL + Operations.BILL_PAYMENT,
             request,
             onResponse,
             onError
@@ -868,7 +1306,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
         request.paymentInfo = ("MPHONE=$mobile")
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.BILL_PAYMENT,
+            consumerURL + Operations.BILL_PAYMENT,
             request,
             onResponse,
             onError,
@@ -888,7 +1326,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
         request.paymentInfo = ("METER=$meterNumber")
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.BILL_PAYMENT,
+            consumerURL + Operations.BILL_PAYMENT,
             request,
             onResponse,
             onError,
@@ -902,12 +1340,11 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.GET,
-            serverURL + Operations.GUESS_Biller,
+            consumerURL + Operations.GUESS_Biller,
             "",
             onResponse,
             onError,
             null,
-            runOnOwnThread = true,
             "mobile",
             mobile
         )
@@ -920,7 +1357,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.GeneratePaymentToken,
+            consumerURL + Operations.GeneratePaymentToken,
             request,
             onResponse,
             onError,
@@ -934,13 +1371,14 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.PAYMENT_REQUEST,
+            consumerURL + Operations.PAYMENT_REQUEST,
             paymentRequest,
             onResponse,
             onError,
         )
     }
 
+    @Deprecated("Legacy noebs transfer endpoint; not available in the current /consumer API.")
     fun noebsTransfer(
         request: NoebsTransfer,
         onResponse: (TutiResponse) -> Unit,
@@ -967,11 +1405,10 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.QuickPayment,
+            consumerURL + Operations.QuickPayment,
             request,
             onResponse,
             onError, null,
-            runOnOwnThread = true,
             "uuid", uuid
         )
     }
@@ -988,10 +1425,10 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
         request.quickPayToken = uuid
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.QuickPayment,
+            consumerURL + Operations.QuickPayment,
             request,
             onResponse,
-            onError, null, runOnOwnThread = true, "uuid", uuid
+            onError, null, "uuid", uuid
         )
     }
 
@@ -1002,16 +1439,18 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.GET,
-            serverURL + Operations.GetPaymentToken,
+            consumerURL + Operations.GetPaymentToken,
             "",
             onResponse,
             onError,
             null,
-            runOnOwnThread = true,
             "uuid", uuid
         )
     }
 
+    /**
+     * Upsert device token for push notifications.
+     */
     fun UpsertFirebase(
         token: String,
         onResponse: (TutiResponse?) -> Unit,
@@ -1022,11 +1461,19 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
 
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.UpsertFirebaseToken,
+            consumerURL + Operations.UpsertFirebaseToken,
             data(token),
             onResponse,
             onError,
         )
+    }
+
+    fun upsertDeviceToken(
+        token: String,
+        onResponse: (TutiResponse?) -> Unit,
+        onError: (TutiResponse?, Exception?) -> Unit
+    ) {
+        UpsertFirebase(token, onResponse, onError)
     }
 
 
@@ -1044,7 +1491,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
         request.pan = data.pan
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.START_IPIN,
+            consumerURL + Operations.START_IPIN,
             request,
             onResponse,
             onError
@@ -1068,7 +1515,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
         request.phoneNumber = "249" + data.phone.removePrefix("0")
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.CONFIRM_IPIN,
+            consumerURL + Operations.CONFIRM_IPIN,
             request,
             onResponse,
             onError
@@ -1098,7 +1545,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
 
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.CHANGE_IPIN,
+            consumerURL + Operations.CHANGE_IPIN,
             request,
             onResponse,
             onError
@@ -1112,12 +1559,11 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.GET,
-            serverURL + Operations.TRANSACTION_BY_ID,
+            consumerURL + Operations.TRANSACTION_BY_ID,
             "",
             onResponse,
             onError,
             null,
-            runOnOwnThread = true,
             "uuid",
             uuid
         )
@@ -1131,12 +1577,11 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.GET,
-            serverURL + Operations.USER_CARDS,
+            consumerURL + Operations.USER_CARDS,
             "",
             onResponse,
             onError,
             null,
-            runOnOwnThread = true,
             "mobile",
             mobile
         )
@@ -1149,7 +1594,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.CHECK_USER,
+            consumerURL + Operations.CHECK_USER,
             phones,
             onResponse,
             onError,
@@ -1164,7 +1609,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     ) {
         sendRequest(
             RequestMethods.POST,
-            serverURL + Operations.SET_MAIN_CARD,
+            consumerURL + Operations.SET_MAIN_CARD,
             card,
             onResponse,
             onError,
@@ -1173,6 +1618,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
     }
 
 
+    @Deprecated("Legacy ledger endpoint; use getTransactions() for /consumer/transactions.")
     fun retrieveLedgerTransactions(
         accountId: String,
         onResponse: (List<Ledger>) -> Unit,
@@ -1185,10 +1631,11 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
             onResponse,
             onError,
             null,
-            runOnOwnThread = true, "account_id", accountId
+            "account_id", accountId
         )
     }
 
+    @Deprecated("Legacy ledger endpoint; use getTransactions() for /consumer/transactions.")
     fun retrieveNoebsTransactions(
         accountId: String,
         onResponse: (List<NoebsTransaction>) -> Unit,
@@ -1201,7 +1648,7 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
             onResponse,
             onError,
             null,
-            runOnOwnThread = true, "account_id", accountId
+            "account_id", accountId
         )
     }
 
@@ -1213,101 +1660,132 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
         sendRequest(
             method=RequestMethods.POST,
 
-            URL=noebsServer + Operations.NOEBS_KYC,
+            URL=consumerURL + Operations.NOEBS_KYC,
             requestToBeSent = kyc,
             onResponse = onResponse,
             onError=onError,
-            null,
-            runOnOwnThread = true,
+            headers = null,
         )
+    }
+
+    /**
+     * openChatSocket opens a websocket connection to the noebs chat service.
+     * The Authorization header must carry a valid JWT (token or "Bearer <token>").
+     */
+    fun openChatSocket(
+        listener: WebSocketListener,
+        token: String = authToken,
+        wsBaseURL: String = noebsBaseURL,
+        path: String = "/ws"
+    ): WebSocket {
+        val wsURL = buildWsURL(wsBaseURL, path)
+        val requestBuilder = Request.Builder().url(wsURL)
+        if (token.isNotBlank()) {
+            requestBuilder.header("Authorization", token)
+        }
+        return okHttpClient.newWebSocket(requestBuilder.build(), listener)
     }
 
     inline fun <reified RequestType, reified ResponseType, reified ErrorType> sendRequest(
         method: RequestMethods,
         URL: String,
-        requestToBeSent: RequestType?,
+        requestToBeSent: RequestType? = null,
         crossinline onResponse: (ResponseType) -> Unit,
         crossinline onError: (ErrorType?, Exception?) -> Unit,
         headers: Map<String, String>? = null,
-        runOnOwnThread: Boolean = true,
         vararg params: String
-    ): Thread {
-        val d = params.toList().chunked(2).map { it[0] to it[1] }
-        val urlData = d.map { "${it.first}=${it.second}" }.joinToString("&", "?", "")
-        val finalURL = URL + urlData
-        val runnable = {
-            val jsonObjectString = Json.encodeToString(requestToBeSent)
-            //println(jsonObjectString)
-            val requestBody: RequestBody = jsonObjectString.toRequestBody(JSON)
-            val requestBuilder: Request.Builder = Request.Builder().url(finalURL)
-            requestBuilder.header("Authorization", authToken)
-            requestBuilder.header("Accept", "application/json")
-
-            //add additional headers set by the user
-            if (headers != null) {
-                for (key in headers.keys) {
-                    headers[key]?.let { requestBuilder.header(key, it) }
-                }
-            }
-
-            //check for http method set by the user
-            when (method) {
-                RequestMethods.POST -> requestBuilder.post(requestBody)
-                RequestMethods.DELETE -> requestBuilder.delete(requestBody)
-                RequestMethods.PUT -> requestBuilder.put(requestBody)
-                else -> requestBuilder.get()
-            }
-
-            val request: Request = requestBuilder.build()
-            try {
-                okHttpClient.newCall(request).execute().use { rawResponse ->
-                    // check for http errors
-                    val responseCode = rawResponse.code
-                    val responseBody = rawResponse.body?.string() ?: ""
-                    if (responseCode in 400..599) {
-                        // call onError if request has failed
-                        onError(parseResponse(responseBody), null)
-                    } else {
-                        // call onResponse if request has succeeded
-                        onResponse(parseResponse(responseBody))
-                    }
-                }
-            } catch (exception: Exception) {
-                when (exception) {
-                    is SerializationException -> {
-                        exception.printStackTrace()
-                        onError(null, exception)
-                    }
-                    is IOException -> {
-                        exception.printStackTrace()
-                        onError(null, exception)
-                    }
-                    else -> {
-                        exception.printStackTrace()
-                        throw exception
-                    }
-                }
-            }
+    ): Call {
+        require(params.size % 2 == 0) {
+            "params must be an even number of key/value entries. Got ${params.size}."
         }
 
-        // unit testing concurrent code on multiple threads is hard
-        val thread = Thread(runnable)
-        if (runOnOwnThread) {
-            thread.start()
+        val baseUrl = URL.toHttpUrlOrNull() ?: throw IllegalArgumentException("Invalid URL: $URL")
+        val finalUrl = baseUrl.newBuilder().apply {
+            params.toList().chunked(2).forEach { (key, value) ->
+                addQueryParameter(key, value)
+            }
+        }.build()
+
+        val requestBuilder = Request.Builder().url(finalUrl)
+        val tokenSnapshot = authToken
+        if (tokenSnapshot.isNotBlank()) {
+            requestBuilder.header("Authorization", tokenSnapshot)
+        }
+        requestBuilder.header("Accept", "application/json")
+
+        // add additional headers set by the user
+        headers?.forEach { (key, value) ->
+            requestBuilder.header(key, value)
+        }
+
+        // check for http method set by the user
+        val requestBody = if (method == RequestMethods.GET) {
+            null
         } else {
-            thread.run()
+            Json.encodeToString(requestToBeSent).toRequestBody(JSON)
         }
-        return thread
+
+        when (method) {
+            RequestMethods.POST -> requestBuilder.post(requireNotNull(requestBody))
+            RequestMethods.DELETE -> requestBuilder.delete(requireNotNull(requestBody))
+            RequestMethods.PUT -> requestBuilder.put(requireNotNull(requestBody))
+            else -> requestBuilder.get()
+        }
+
+        val request = requestBuilder.build()
+        val call = okHttpClient.newCall(request)
+        call.enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                onError(null, e)
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                response.use { rawResponse ->
+                    val responseCode = rawResponse.code
+                    val responseBody = try {
+                        rawResponse.body.string()
+                    } catch (e: Exception) {
+                        onError(null, e)
+                        return
+                    }
+
+                    try {
+                        if (responseCode in 400..599) {
+                            onError(parseResponse(responseBody), null)
+                        } else {
+                            onResponse(parseResponse(responseBody))
+                        }
+                    } catch (e: Exception) {
+                        onError(null, e)
+                    }
+                }
+            }
+        })
+        return call
     }
 
+    private fun buildWsURL(base: String, path: String): String {
+        val trimmedBase = base.trimEnd('/')
+        val trimmedPath = if (path.startsWith("/")) path else "/$path"
+        val httpURL = trimmedBase + trimmedPath
+        return when {
+            httpURL.startsWith("https://") -> "wss://" + httpURL.removePrefix("https://")
+            httpURL.startsWith("http://") -> "ws://" + httpURL.removePrefix("http://")
+            else -> httpURL
+        }
+    }
 
     inline fun <reified ResponseType> parseResponse(responseAsString: String): ResponseType {
+        val trimmed = responseAsString.trim()
         return when (ResponseType::class.java) {
             String::class.java -> {
                 responseAsString as ResponseType
             }
+            Unit::class.java -> {
+                Unit as ResponseType
+            }
             else -> {
-                Json.decodeFromString(responseAsString)
+                Json.decodeFromString(trimmed)
             }
         }
 
@@ -1315,24 +1793,32 @@ class TutiApiClient(val serverURL: String = "https://dapi.nil.sd/",
 
     companion object {
         val JSON: MediaType = "application/json; charset=utf-8".toMediaType()
-        private val logger: HttpLoggingInterceptor
-            get() {
-                val logging = HttpLoggingInterceptor()
-                logging.setLevel(HttpLoggingInterceptor.Level.BODY)
-                return logging
-            }
+        private val httpLoggingInterceptor: HttpLoggingInterceptor =
+            HttpLoggingInterceptor().setLevel(HttpLoggingInterceptor.Level.NONE)
+
+        /**
+         * Enable/disable HTTP logging. Default is [HttpLoggingInterceptor.Level.NONE].
+         *
+         * Warning: BODY logging may leak sensitive data (JWTs, PANs, IPIN-related payloads) into app logs.
+         */
+        @JvmStatic
+        fun setHttpLoggingLevel(level: HttpLoggingInterceptor.Level) {
+            httpLoggingInterceptor.level = level
+        }
 
         val okHttpClient: OkHttpClient = OkHttpClient.Builder()
-            .addInterceptor(HttpLoggingInterceptor().setLevel(HttpLoggingInterceptor.Level.BODY))
+            .addInterceptor(httpLoggingInterceptor)
             .connectTimeout(60, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
             .build()
 
+        @OptIn(ExperimentalSerializationApi::class)
         val Json = Json {
             ignoreUnknownKeys = true
             isLenient = true
             encodeDefaults = true
+            explicitNulls = false
             serializersModule = SerializersModule { contextual(Date::class, DateSerializer) }
         }
     }

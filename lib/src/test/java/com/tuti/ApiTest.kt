@@ -12,13 +12,14 @@ import com.tuti.api.data.Card
 import com.tuti.api.data.Cards
 import com.tuti.api.data.TutiResponse
 import com.tuti.util.Utils
-import org.junit.Assert
 import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import java.util.*
 
+@Disabled("Integration test: requires a live noebs instance and test credentials.")
 class ApiTest {
     @BeforeEach
     fun signIn() {
@@ -45,15 +46,16 @@ class ApiTest {
             Assertions.assertEquals("0925343834", user.mobileNumber)
             Assertions.assertTrue(user.isMerchant)
             Assertions.assertEquals(0, user.id.toLong())
-        }) { error: TutiResponse?, exception: Exception? -> Assert.fail("sign in failed") }
+        }) { _: TutiResponse?, _: Exception? -> Assertions.fail("sign in failed") }
         credentials = SignInRequest("non_existent_user" + Utils.generateRandomAlphanumericString(8), "asjfkdlj")
         client.SignIn(
-                credentials,
-                { signInResponse: SignInResponse? -> Assert.fail("sign in failed because the user is non existent") }) { error: TutiResponse?, exception: Exception? ->
+            credentials,
+            { _: SignInResponse? -> Assertions.fail("sign in failed because the user is non existent") }
+        ) { error: TutiResponse?, exception: Exception? ->
             if (error != null) println(
                     "\nNon existent user case:\n$error"
             )
-            if (exception != null) Assert.fail("exception in sign in")
+            if (exception != null) Assertions.fail("exception in sign in")
         }
     }
 
@@ -78,24 +80,24 @@ class ApiTest {
         client.Signup(info, { signUpResponse: SignUpResponse ->
             val user = signUpResponse.user
             println("User information from signup endpoint:\n$user")
-            Assert.assertEquals(username, user.username)
-            Assert.assertEquals(fullname, user.fullname)
-            Assert.assertEquals(email, user.email)
-            Assert.assertEquals(mobileNumber, user.mobileNumber)
-            Assert.assertEquals(isMerchant, user.isMerchant)
-        }) { error: TutiResponse?, exception: Exception? -> Assert.fail("sign up failed") }
+            Assertions.assertEquals(username, user.username)
+            Assertions.assertEquals(fullname, user.fullname)
+            Assertions.assertEquals(email, user.email)
+            Assertions.assertEquals(mobileNumber, user.mobileNumber)
+            Assertions.assertEquals(isMerchant, user.isMerchant)
+        }) { _: TutiResponse?, _: Exception? -> Assertions.fail("sign up failed") }
         val creds = SignInRequest(username, password)
         client.SignIn(creds, { objectReceived: SignInResponse ->
             val user = objectReceived.user
             println("User information from sign in endpoint:\n$user")
-            Assert.assertEquals(username, user.username)
-            Assert.assertEquals(fullname, user.fullname)
-            Assert.assertEquals(email, user.email)
-            Assert.assertEquals(mobileNumber, user.mobileNumber)
-            Assert.assertEquals(isMerchant, user.isMerchant)
+            Assertions.assertEquals(username, user.username)
+            Assertions.assertEquals(fullname, user.fullname)
+            Assertions.assertEquals(email, user.email)
+            Assertions.assertEquals(mobileNumber, user.mobileNumber)
+            Assertions.assertEquals(isMerchant, user.isMerchant)
             null
         }
-        ) { errorReceived: TutiResponse?, exception: Exception? -> Assert.fail("sign in failed!") }
+        ) { _: TutiResponse?, _: Exception? -> Assertions.fail("sign in failed!") }
     }
 
     @Test
@@ -121,8 +123,8 @@ class ApiTest {
                     fail = false
                 }
             }
-            if (fail) Assert.fail("card was not found!")
-        }) { objectReceived: TutiResponse?, exception: Exception? -> Assert.fail() }
+            if (fail) Assertions.fail("card was not found!")
+        }) { _: TutiResponse?, _: Exception? -> Assertions.fail() }
     }
 
     fun outputCardsInfo(cards: Cards) {

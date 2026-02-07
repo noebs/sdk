@@ -4,11 +4,27 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import org.junit.jupiter.api.Test;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+
 class PaymentTokenTest {
 
     @Test
     void parseQRToken() {
-        PaymentToken pt = PaymentToken.ParseQRToken("eyJJRCI6MzksIkNyZWF0ZWRBdCI6IjIwMjItMDgtMTdUMTE6MzY6NTQuOTMzNzAxNjM0WiIsIlVwZGF0ZWRBdCI6IjIwMjItMDgtMTdUMTE6MzY6NTQuOTMzNzAxNjM0WiIsIkRlbGV0ZWRBdCI6bnVsbCwiVXNlcklEIjoyLCJhbW91bnQiOjEwMDAsInV1aWQiOiJiNjZmYmQyNS1mYjI2LTRjYjEtYjkxNy1iNjJmMWQzY2FiYTYiLCJub3RlIjoiVGhpcyBpcyB3b3JraW5nIiwidG9DYXJkIjoiMzI4OTMyOTgzOTgyOTgzMjk4MyIsInRyYW5zYWN0aW9uIjp7IklEIjowLCJDcmVhdGVkQXQiOiIwMDAxLTAxLTAxVDAwOjAwOjAwWiIsIlVwZGF0ZWRBdCI6IjAwMDEtMDEtMDFUMDA6MDA6MDBaIiwiRGVsZXRlZEF0IjpudWxsLCJVc2VySUQiOjAsInJlc3BvbnNlQ29kZSI6MH0sIlRyYW5zYWN0aW9uSUQiOjAsImlzX3BhaWQiOmZhbHNlfQ==");
-        assertEquals(pt.getAmount(), 1000);
+        // PaymentToken.ParseQRToken expects a base64-encoded JSON payload.
+        // Use the current schema where `transaction` is an array (legacy payloads used an object).
+        String json = "{"
+            + "\"amount\":1000,"
+            + "\"uuid\":\"b66fbd25-fb26-4cb1-b917-b62f1d3cabaa\","
+            + "\"note\":\"This is working\","
+            + "\"toCard\":\"3289329839829832983\","
+            + "\"transaction\":[],"
+            + "\"is_paid\":false"
+            + "}";
+        String b64 = Base64.getEncoder().encodeToString(json.getBytes(StandardCharsets.UTF_8));
+
+        PaymentToken pt = PaymentToken.ParseQRToken(b64);
+        assertNotNull(pt);
+        assertEquals(1000, pt.getAmount());
     }
 }

@@ -16,7 +16,7 @@ class PaymentToken(
         @SerialName("cart_id")
         val cartId: String = "",
 
-        @SerialName("UUID")
+        @SerialName("uuid")
         val uuid: String = "",
 
         val mobile: String = "",
@@ -27,16 +27,16 @@ class PaymentToken(
         @SerialName("toCard")
         val cardTobePaid: String = "",
 
-        /**
-         * Use getTransaction to get the inner transaction response we get from EBS
-         * @return
-         */
-        val transaction: EBSResponse = EBSResponse(),
+        @SerialName("transaction")
+        val transactions: List<EBSResponse> = emptyList(),
 
         @SerialName("is_paid")
         val isPaymentSuccessful: Boolean = false,
 
         ) {
+    @Deprecated("Use transactions instead.")
+    val transaction: EBSResponse
+        get() = transactions.firstOrNull() ?: EBSResponse()
 
     companion object {
         /**

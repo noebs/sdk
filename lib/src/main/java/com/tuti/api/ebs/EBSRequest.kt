@@ -1,12 +1,8 @@
 package com.tuti.api.ebs
 
 
-import com.sun.jersey.core.util.Base64
 import kotlinx.serialization.SerialName
-import java.security.InvalidKeyException
-import java.security.Key
 import java.security.KeyFactory
-import java.security.NoSuchAlgorithmException
 import java.security.spec.InvalidKeySpecException
 import java.security.spec.X509EncodedKeySpec
 import java.text.DateFormat
@@ -15,14 +11,19 @@ import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import java.util.*
-import javax.crypto.BadPaddingException
 import javax.crypto.Cipher
-import javax.crypto.IllegalBlockSizeException
-import javax.crypto.NoSuchPaddingException
+import okio.ByteString
+import okio.ByteString.Companion.decodeBase64
+import okio.ByteString.Companion.toByteString
 
 
 @kotlinx.serialization.Serializable
 class EBSRequest {
+    companion object {
+        private const val DEFAULT_PUBLIC_KEY =
+            "MFwwDQYJKoZIhvcNAQEBBQADSwAwSAJBANx4gKYSMv3CrWWsxdPfxDxFvl+Is/0kc1dvMI1yNWDXI3AgdI4127KMUOv7gmwZ6SnRsHX/KAM0IPRe0+Sa0vMCAwEAAQ=="
+    }
+
     @SerialName("applicationId")
     val applicationId: String = "TutiPay"
 
@@ -129,52 +130,29 @@ class EBSRequest {
     private fun getIPINBlock(ipin: String?,
                              publicKey: String?, uuid: String): String? {
         // clear ipin = uuid +  IPIN
-        var ipin = ipin
-        val cleraIpin = uuid + ipin
+        if (ipin == null) return null
+        val clearIpin = uuid + ipin
 
-        // prepare public key, get public key from its String representation as
-        // base64
-        val keyByte = Base64.decode(publicKey)
-        // generate public key
-        val s = X509EncodedKeySpec(keyByte)
-        var factory: KeyFactory? = null
-        try {
-            factory = KeyFactory.getInstance("RSA")
-        } catch (e: NoSuchAlgorithmException) {
-            // TODO Auto-generated catch block
-            e.printStackTrace()
-        }
-        var pubKey: Key? = null
-        try {
-            pubKey = factory!!.generatePublic(s)
+        val publicKeyBase64 = publicKey?.takeIf { it.isNotBlank() } ?: DEFAULT_PUBLIC_KEY
+        val keyBytes = publicKeyBase64.decodeBase64()?.toByteArray() ?: return null
+
+        val pubKey = try {
+            KeyFactory.getInstance("RSA").generatePublic(X509EncodedKeySpec(keyBytes))
         } catch (e: InvalidKeySpecException) {
-            // TODO Auto-generated catch block
             e.printStackTrace()
+            return null
         }
-        try {
+
+        return try {
             // construct Cipher with encryption algrithm:RSA, cipher mode:ECB and padding:PKCS1Padding
             val cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding")
             cipher.init(Cipher.ENCRYPT_MODE, pubKey)
             // calculate ipin, encryption then encoding to base64
-            ipin = String(Base64.encode(cipher.doFinal(cleraIpin
-                    .toByteArray())))
-        } catch (e: NoSuchAlgorithmException) {
-            // TODO Auto-generated catch block
+            cipher.doFinal(clearIpin.toByteArray(Charsets.UTF_8)).toByteString().base64()
+        } catch (e: Exception) {
             e.printStackTrace()
-        } catch (e: NoSuchPaddingException) {
-            // TODO Auto-generated catch block
-            e.printStackTrace()
-        } catch (e: InvalidKeyException) {
-            // TODO Auto-generated catch block
-            e.printStackTrace()
-        } catch (e: IllegalBlockSizeException) {
-            // TODO Auto-generated catch block
-            e.printStackTrace()
-        } catch (e: BadPaddingException) {
-            // TODO Auto-generated catch block
-            e.printStackTrace()
+            null
         }
-        return ipin
     }
 }
 

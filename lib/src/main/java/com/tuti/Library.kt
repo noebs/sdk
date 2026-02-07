@@ -6,9 +6,7 @@ package com.tuti
 import com.tuti.api.TutiApiClient
 import com.tuti.api.authentication.SignInRequest
 import com.tuti.api.authentication.SignInResponse
-import com.tuti.api.data.Card
 import com.tuti.api.data.PaymentRequest
-import com.tuti.api.data.UserProfile
 
 object Library {
     var jwt: String? = null
@@ -16,34 +14,30 @@ object Library {
     @JvmStatic
     fun main(args: Array<String>) {
         val client = TutiApiClient()
-        val tuti_username = System.getenv("tuti_username")
-        val tuti_password = System.getenv("tuti_password")
-        val tuti_card_pan = System.getenv("tuti_card_pan")
-        val tuti_card_exp_date = System.getenv("tuti_card_exp_date")
-        val tuti_card_ipin = System.getenv("tuti_card_ipin")
-
-        val card = Card(
-            PAN = tuti_card_pan,
-            expiryDate = tuti_card_exp_date
-        )
+        val tutiUsername = System.getenv("tuti_username") ?: error("missing env var: tuti_username")
+        val tutiPassword = System.getenv("tuti_password") ?: error("missing env var: tuti_password")
+        val tutiCardPan = System.getenv("tuti_card_pan") ?: error("missing env var: tuti_card_pan")
+        // Optional env vars (kept for parity with other SDK examples):
+        // val tutiCardExpDate = System.getenv("tuti_card_exp_date") ?: ""
+        // val tutiCardIpin = System.getenv("tuti_card_ipin") ?: ""
         client.SignIn(SignInRequest(
-            mobile = tuti_username,
-            password = tuti_password
+            mobile = tutiUsername,
+            password = tutiPassword
         ),
             onResponse = { signInResponse: SignInResponse ->
                 val token = signInResponse.authorizationJWT
                 client.authToken = token
                 client.sendPaymentRequest(
                     paymentRequest = PaymentRequest(
-                        mobile = tuti_username,
-                        toCard = tuti_card_pan,
+                        mobile = tutiUsername,
+                        toCard = tutiCardPan,
                         amount = 1L
                     ),
                     onResponse = {tutiResponse -> println(tutiResponse.uuid) },
-                    onError = {tutiResponse, exception ->  }
+                    onError = { _, _ ->  }
                 )
             },
-            onError = { tutiResponse, exception -> })
+            onError = { _, _ -> })
     }
 }
 

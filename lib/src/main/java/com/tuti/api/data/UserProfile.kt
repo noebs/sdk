@@ -13,3 +13,8 @@ data class UserProfile(
 data class UserProfileResult(
     val result:String,
 )
+
+@kotlinx.serialization.Serializable
+data class UserLanguageResponse(
+    val language: String = ""
+)

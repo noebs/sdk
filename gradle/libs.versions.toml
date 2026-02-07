@@ -1,0 +1,30 @@
+[versions]
+# Toolchain / language
+kotlin = "2.3.0"
+
+# Runtime deps
+kotlinx-serialization = "1.10.0"
+okhttp = "5.3.2"
+
+# Test deps
+junit-jupiter = "5.14.2"
+junit-platform = "1.14.2"
+assertj = "3.27.7"
+
+[plugins]
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+
+[libraries]
+# JSON (kotlinx.serialization)
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
+
+# HTTP
+okhttp-bom = { module = "com.squareup.okhttp3:okhttp-bom", version.ref = "okhttp" }
+okhttp = { module = "com.squareup.okhttp3:okhttp" }
+okhttp-logging-interceptor = { module = "com.squareup.okhttp3:logging-interceptor" }
+
+# Tests
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit-jupiter" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher", version.ref = "junit-platform" }
+assertj-core = { module = "org.assertj:assertj-core", version.ref = "assertj" }

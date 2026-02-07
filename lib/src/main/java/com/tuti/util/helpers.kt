@@ -12,6 +12,7 @@ import kotlinx.serialization.encoding.Encoder
 import java.text.SimpleDateFormat
 import java.util.Date
 
+@OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 @Serializer(forClass = Date::class)
 object DateSerializer : KSerializer<Date> {
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'") // Define your date format

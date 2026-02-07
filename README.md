@@ -20,6 +20,12 @@ dependencies {
 	}
 ```
 
+## Build (SDK Development)
+
+- Requires Java 17+ to run `./gradlew` (Gradle 9 wrapper).
+- Dependency versions are managed via Gradle Version Catalog: `gradle/libs.versions.toml`.
+- See `MIGRATION.md` for breaking-change notes.
+
  ## How does the api work
 
  We are trying to simplify the API as much as we can, while the API is currently rapidly changing we are using it in production capacities.
@@ -84,6 +90,59 @@ client.getPublicKey(com.tuti.api.ebs.EBSRequest(), { response, _ ->
 ```
 
 Note how the log is running outside the main looper, while the toast runs within the main thread's.
+
+### HTTP Logging
+
+HTTP logging is disabled by default (to avoid leaking sensitive data into logs). You can enable it for debugging:
+
+```kotlin
+import okhttp3.logging.HttpLoggingInterceptor
+
+TutiApiClient.setHttpLoggingLevel(HttpLoggingInterceptor.Level.BODY)
+```
+
+# Wallet API (v1)
+
+`noebs` now exposes a new wallet API over the gRPC-gateway under `/wallet/*` (see `proto/noebs/wallet/v1/wallet.proto` in the server repo). The SDK exposes it under `client.wallet`.
+
+Wallet endpoints return gRPC status errors (google.rpc.Status). In the SDK these are represented as `com.tuti.api.wallet.v1.RpcStatus` in the `onError` callback.
+
+```kotlin
+import com.tuti.api.TutiApiClient
+import com.tuti.api.wallet.v1.EnsureWalletRequest
+
+val client = TutiApiClient(noebsServer = "http://localhost:8000/")
+client.authToken = "Bearer <jwt>" // if your deployment requires auth
+
+client.wallet.ensureWallet(
+    EnsureWalletRequest(
+        tenantId = "tenant_1",
+        userId = 123,
+        currency = "SDG",
+    ),
+    onResponse = { wallet ->
+        println("walletId=${wallet.id} balance=${wallet.balance}")
+    },
+    onError = { status, ex ->
+        println("wallet error: code=${status?.code} message=${status?.message} ex=${ex?.message}")
+    },
+)
+```
+
+# Chat WebSocket (Authorization required)
+
+The `/ws` endpoint now requires a valid JWT in the `Authorization` header (token or `Bearer <token>`). Use the JWT you receive after login or OTP verification.
+
+```kotlin
+val client = TutiApiClient()
+client.authToken = token // or "Bearer $token"
+
+val ws = client.openChatSocket(object : WebSocketListener() {
+    override fun onMessage(webSocket: WebSocket, text: String) {
+        // handle message
+    }
+})
+```
 
 # Deployment notes
 

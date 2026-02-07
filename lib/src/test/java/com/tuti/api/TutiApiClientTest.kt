@@ -13,11 +13,13 @@ import com.tuti.model.NotificationFilters
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.fail
+import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import java.util.*
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
+@Disabled("Integration test: requires a live noebs instance and stable test fixtures.")
 internal class TutiApiClientTest {
 
     @Test
@@ -295,5 +297,4 @@ internal class TutiApiClientTest {
         }
     }
 }
-
 

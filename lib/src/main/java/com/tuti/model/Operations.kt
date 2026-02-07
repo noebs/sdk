@@ -13,7 +13,7 @@ object Operations {
     const val SIGN_IN = "login"
     const val SINGLE_SIGN_IN = "otp/login"
     const val GENERATE_LOGIN_OTP = "otp/generate"
-    const val GENERATE_LOGIN_OTP_INSECURE = "otp/generate"
+    const val GENERATE_LOGIN_OTP_INSECURE = "otp/generate_insecure"
     const val VERIFY_OTP = "otp/verify"
     const val OTP_2FA = "otp/balance"
     const val SIGN_UP = "register"
@@ -45,11 +45,11 @@ object Operations {
     const val QR_COMPLETE = "qr_complete"
     const val VERIFY_FIREBASE = "verify_firebase"
 
-    const val GeneratePaymentToken = "qr/generate"
-    const val QuickPayment = "qr/pay"
+    const val GeneratePaymentToken = "payment_token"
+    const val QuickPayment = "payment_token/quick_pay"
 
-    const val GetPaymentToken = "qr/check"
-    const val UpsertFirebaseToken = "user/firebase"
+    const val GetPaymentToken = "payment_token"
+    const val UpsertFirebaseToken = "user/device"
 
     const val ChangePassword = "change_password"
     const val TRANSACTION_BY_ID = "transaction"
@@ -68,5 +68,10 @@ object Operations {
     // transactions
     const val LEDGER_TRANSACTIONS = "nil/transactions"
     const val NOEBS_TRANSACTIONS = "ledger/transactions"
-    const val NOEBS_KYC = "consumer/kyc"
+    const val NOEBS_KYC = "kyc"
+
+    const val AUTH_GOOGLE = "auth/google"
+    const val AUTH_COMPLETE_PROFILE = "auth/complete_profile"
+    const val AUTH_ME = "auth/me"
+    const val USER_LANGUAGE = "user/lang"
 }
