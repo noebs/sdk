@@ -10,6 +10,7 @@ name: Java CI with Gradle
 on:
   push:
     branches: [ "master" ]
+    tags: [ "v*" ]
   pull_request:
     branches: [ "master" ]
 
@@ -34,17 +35,11 @@ jobs:
       with:
         arguments: build -x test
         
-    - name: Set short git commit SHA
-      id: vars
-      run: echo "short_sha=$(git rev-parse --short ${{ github.sha }})" >> "$GITHUB_OUTPUT"
-
-        
-    # The USERNAME and TOKEN need to correspond to the credentials environment variables used in
-    # the publishing section of your build.gradle
     - name: Publish to GitHub Packages
+      if: startsWith(github.ref, 'refs/tags/v')
       uses: gradle/gradle-build-action@67421db6bd0bf253fb4bd25b31ebb98943c375e1
       with:
-        arguments: publish -Pversion=${{ steps.vars.outputs.short_sha }}
+        arguments: publish
       env:
         USERNAME: ${{ github.actor }}
         TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -4,9 +4,13 @@ import kotlinx.serialization.SerialName
 
 @kotlinx.serialization.Serializable
 data class User(
+        @SerialName("ID")
         val id: Int = 0,
+        @SerialName("CreatedAt")
         val createdAt: String = "",
+        @SerialName("UpdatedAt")
         val updateAt: String = "",
+        @SerialName("DeletedAt")
         val deletedAt: String = "",
         val username: String = "",
         val fullname: String = "",

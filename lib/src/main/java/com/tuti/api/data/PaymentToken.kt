@@ -33,6 +33,9 @@ class PaymentToken(
         @SerialName("is_paid")
         val isPaymentSuccessful: Boolean = false,
 
+        @SerialName("ebs_response")
+        val ebsResponse: EBSResponse = EBSResponse(),
+
         ) {
     @Deprecated("Use transactions instead.")
     val transaction: EBSResponse

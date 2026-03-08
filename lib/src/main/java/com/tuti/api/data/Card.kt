@@ -14,6 +14,10 @@ data class Card(
         val cardIndex: String = "",
         @SerialName("user_pubkey")
         val pubkey: String = "",
+        @SerialName("is_main")
+        val isMain: Boolean = false,
+        @SerialName("is_valid")
+        val isValid: Boolean? = null,
 )
 
 
@@ -38,12 +42,14 @@ data class SignUpCard(
 
 @kotlinx.serialization.Serializable
 data class Cards (
-        val cards: List<Card> = emptyList()
+        val cards: List<Card> = emptyList(),
+        @SerialName("main_card")
+        val mainCard: Card? = null,
 )
 
 @kotlinx.serialization.Serializable
 data class UserCards (
-        @SerialName("pan")
+        @SerialName("main_card")
         val pan: String = "",
         @SerialName("exp_date")
         val expDate: String = "",

@@ -5,6 +5,9 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import java.util.*
 
 /**
@@ -15,7 +18,8 @@ import java.util.*
 @kotlinx.serialization.Serializable
 data class TutiResponse(
         val message: String = "",
-        val code: String = "",
+        @SerialName("code")
+        private val rawCode: JsonElement? = null,
         val uuid: String = "",
         val result: String = "",
         @SerialName("biller_id")
@@ -25,7 +29,8 @@ data class TutiResponse(
         val token: String = "",
 
         val status: String = "",
-        val details: String = "",
+        @SerialName("details")
+        private val rawDetails: JsonElement? = null,
         @SerialName("data") val data: Data?=null,
 
         @SerialName("due_amount")
@@ -38,6 +43,14 @@ data class TutiResponse(
         val ebsResponse: EBSResponse = EBSResponse()
     //TODO(adonese): some of dapi / noebs fields are not exposed here, transaction_id from noebs wallet
 ) {
+    val code: String
+        get() = rawCode.toSafeString()
+
+    val details: String
+        get() = rawDetails.toSafeString()
+
+    val detailsJson: JsonElement?
+        get() = rawDetails
 
     fun getRawPaymentToken(): String {
         return result;
@@ -79,6 +92,14 @@ data class TutiResponse(
      */
     fun getKey(): String? {
         return this.ebsResponse.pubKeyValue
+    }
+}
+
+private fun JsonElement?.toSafeString(): String {
+    return when (this) {
+        null -> ""
+        is JsonPrimitive -> this.contentOrNull ?: this.toString()
+        else -> this.toString()
     }
 }
 

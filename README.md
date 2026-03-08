@@ -112,7 +112,12 @@ import com.tuti.api.TutiApiClient
 import com.tuti.api.wallet.v1.EnsureWalletRequest
 
 val client = TutiApiClient(noebsServer = "http://localhost:8000/")
-client.authToken = "Bearer <jwt>" // if your deployment requires auth
+client.authToken = "Bearer <jwt>" // required for /wallet routes on current noebs
+client.defaultHeaders = mapOf(
+    // Optional: needed when your deployment relies on extra headers such as tenant or admin key.
+    "X-Tenant-ID" to "tenant_1",
+    // "X-Admin-Key" to "<admin-key>",
+)
 
 client.wallet.ensureWallet(
     EnsureWalletRequest(
@@ -146,22 +151,25 @@ val ws = client.openChatSocket(object : WebSocketListener() {
 
 # Deployment notes
 
-We will still be sticking to jitpack, at least for the public builds. However, we are using github package (using gradle repository). 
+Public tagged releases are exposed through JitPack, and the same tagged version is published to GitHub Packages by GitHub Actions.
 
 ## noebs sdk versioning
 
-We are using CalVer, it is very convenient as it shows actual progress against time. Seems more concrete than say semver. Jitpack relies on git tags, so the easiest way is to always tag your commits following CalVer semantics (vYY.MM.versionNumber)
+We are using CalVer (`YY.MM.patch`). JitPack relies on git tags, so releases should be tagged as `vYY.MM.patch`.
 
 ## how to deploy noebs to Github Packages
 
-- Update the version number manually in `gradle.properties` version to reflect the new CalVer changes
-- In `lib/build.gradle`, update the username and password with the appropriate Github issues keys (note the password is a a personal access token, and not your password)
+- Update `gradle.properties` to the next CalVer release.
+- Run `./gradlew test`.
+- Commit the release, tag it as `v<version>`, and push `master` plus the tag.
+- GitHub Actions publishes `noebs:lib:<version>` to GitHub Packages when the tag is pushed.
+- For local manual publishing, use your GitHub username plus a personal access token with package write access.
 
-```groovy   
+```groovy
 repositories {
         maven {
             name = "GitHubPackages"
-            url = uri("https://maven.pkg.github.com/tutipay/java-sdk")
+            url = uri("https://maven.pkg.github.com/noebs/sdk")
             credentials {
                 username = project.findProperty("gpr.user") ?: System.getenv("USERNAME")
                 password = project.findProperty("gpr.key") ?: System.getenv("TOKEN")
@@ -178,11 +186,11 @@ repositories {
 
 ```groovy
         maven {
-            url = uri("https://maven.pkg.github.com/tutipay/java-sdk")
+            url = uri("https://maven.pkg.github.com/noebs/sdk")
             credentials {
                 username = project.findProperty("gpr.user") ?: System.getenv("USERNAME")
                 password = project.findProperty("gpr.key") ?: System.getenv("TOKEN")
             }
         }
 ```
-- add to your app's gradle file the implementation, which is `implementation 'noebs:lib:-latest-version'`
+- add to your app's gradle file the implementation, which is `implementation 'noebs:lib:<version>'`

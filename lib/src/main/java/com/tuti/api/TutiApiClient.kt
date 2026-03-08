@@ -66,6 +66,7 @@ class TutiApiClient(
 
     var isSingleThreaded = false
     @Volatile var authToken: String = ""
+    @Volatile var defaultHeaders: Map<String, String> = emptyMap()
     var ipinUsername: String = ""
     var ipinPassword: String = ""
     var ebsKey: String = "MFwwDQYJKoZIhvcNAQEBBQADSwAwSAJBANx4gKYSMv3CrWWsxdPfxDxFvl+Is/0kc1dvMI1yNWDXI3AgdI4127KMUOv7gmwZ6SnRsHX/KAM0IPRe0+Sa0vMCAwEAAQ=="
@@ -102,6 +103,22 @@ class TutiApiClient(
         return request
     }
 
+    private fun normalizeLegacyAuthRequest(
+        credentials: SignInRequest?,
+    ): com.tuti.model.SignInRequest? {
+        if (credentials == null) {
+            return null
+        }
+        return com.tuti.model.SignInRequest(
+            password = credentials.password,
+            otp = credentials.otp,
+            mobile = credentials.mobile.ifBlank { credentials.username },
+            auth = credentials.oldToken,
+            signature = credentials.signature,
+            message = credentials.message,
+        )
+    }
+
     @Deprecated(
         message = "Replace with SignIn with new kotlin classes instead.",
         replaceWith = ReplaceWith("SignIn")
@@ -114,7 +131,7 @@ class TutiApiClient(
         sendRequest(
             RequestMethods.POST,
             consumerURL + Operations.SIGN_IN,
-            credentials,
+            normalizeLegacyAuthRequest(credentials),
             onResponse,
             onError
         )
@@ -309,7 +326,7 @@ class TutiApiClient(
         sendRequest(
             RequestMethods.POST,
             consumerURL + Operations.SINGLE_SIGN_IN,
-            credentials,
+            normalizeLegacyAuthRequest(credentials),
             onResponse,
             onError
         )
@@ -355,7 +372,7 @@ class TutiApiClient(
         sendRequest(
             RequestMethods.POST,
             consumerURL + Operations.GENERATE_LOGIN_OTP_INSECURE,
-            credentials,
+            normalizeLegacyAuthRequest(credentials),
             onResponse,
             onError
         )
@@ -406,7 +423,7 @@ class TutiApiClient(
         sendRequest(
             RequestMethods.POST,
             consumerURL + Operations.REFRESH_TOKEN,
-            credentials,
+            normalizeLegacyAuthRequest(credentials),
             onResponse,
             onError
         )
@@ -1045,14 +1062,9 @@ class TutiApiClient(
 
 
     /**
-     * billInfo gets a bill from EBS using a pre-stored data, only send applicable bill fields
-     * plus the type of transaction
-     *
-     * @param billInfo
-     * @param onResponse
-     * @param onError
+     * Calls the legacy `/consumer/bills` helper, where the server injects its configured inquiry PAN/IPIN.
      */
-    fun billInquiry(
+    fun getBills(
         billInfo: BillInfo,
         onResponse: (TutiResponse) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit,
@@ -1061,6 +1073,39 @@ class TutiApiClient(
             RequestMethods.POST,
             consumerURL + Operations.Get_Bills,
             billInfo,
+            onResponse,
+            onError,
+        )
+    }
+
+    /**
+     * Retained for compatibility. This overload maps to `/consumer/bills`.
+     * Use [getBills] for this flow, or [billInquiry] with [EBSRequest] for `/consumer/bill_inquiry`.
+     */
+    @Deprecated(
+        message = "This overload calls /consumer/bills. Use getBills(BillInfo, ...) or billInquiry(EBSRequest, ...).",
+        replaceWith = ReplaceWith("getBills(billInfo, onResponse, onError)")
+    )
+    fun billInquiry(
+        billInfo: BillInfo,
+        onResponse: (TutiResponse) -> Unit,
+        onError: (TutiResponse?, Exception?) -> Unit,
+    ): Call {
+        return getBills(billInfo, onResponse, onError)
+    }
+
+    /**
+     * Direct bill inquiry against `/consumer/bill_inquiry` using an explicit EBS-style request.
+     */
+    fun billInquiry(
+        request: EBSRequest,
+        onResponse: (TutiResponse) -> Unit,
+        onError: (TutiResponse?, Exception?) -> Unit,
+    ): Call {
+        return sendRequest(
+            RequestMethods.POST,
+            consumerURL + Operations.BILL_INQUIRY,
+            request,
             onResponse,
             onError,
         )
@@ -1684,6 +1729,10 @@ class TutiApiClient(
         if (token.isNotBlank()) {
             requestBuilder.header("Authorization", token)
         }
+        val headerSnapshot = defaultHeaders
+        headerSnapshot.forEach { (key, value) ->
+            requestBuilder.header(key, value)
+        }
         return okHttpClient.newWebSocket(requestBuilder.build(), listener)
     }
 
@@ -1713,6 +1762,10 @@ class TutiApiClient(
             requestBuilder.header("Authorization", tokenSnapshot)
         }
         requestBuilder.header("Accept", "application/json")
+        val defaultHeaderSnapshot = defaultHeaders
+        defaultHeaderSnapshot.forEach { (key, value) ->
+            requestBuilder.header(key, value)
+        }
 
         // add additional headers set by the user
         headers?.forEach { (key, value) ->
