@@ -20,6 +20,7 @@ class ContractAlignmentTest {
               "pubkey": "pub-key",
               "user": {
                 "ID": 42,
+                "DeletedAt": null,
                 "mobile": "0912345678",
                 "fullname": "Jane Doe"
               }
@@ -30,6 +31,7 @@ class ContractAlignmentTest {
         assertEquals("ok", response.result)
         assertEquals("pub-key", response.publicKey)
         assertEquals(42, response.user.id)
+        assertEquals(null, response.user.deletedAt)
         assertEquals("0912345678", response.user.mobileNumber)
     }
 

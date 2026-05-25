@@ -11,7 +11,7 @@ data class User(
         @SerialName("UpdatedAt")
         val updateAt: String = "",
         @SerialName("DeletedAt")
-        val deletedAt: String = "",
+        val deletedAt: String? = null,
         val username: String = "",
         val fullname: String = "",
         val birthday: String = "",
