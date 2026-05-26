@@ -103,7 +103,7 @@ TutiApiClient.setHttpLoggingLevel(HttpLoggingInterceptor.Level.BODY)
 
 # Wallet API (v1)
 
-`noebs` now exposes a new wallet API over the gRPC-gateway under `/wallet/*` (see `proto/noebs/wallet/v1/wallet.proto` in the server repo). The SDK exposes it under `client.wallet`.
+`noebs` exposes wallet APIs under `client.wallet`. Frontend-facing user routes use the authenticated `/wallet/wallets`, `/wallet/methods`, and `/wallet/wallets/{id}/transactions` endpoints. Workflow routes such as deposits, withdrawals, P2P, funding sources, destinations, PIN, and 2FA use the gRPC-gateway `/wallet/*` endpoints.
 
 Wallet endpoints return gRPC status errors (google.rpc.Status). In the SDK these are represented as `com.tuti.api.wallet.v1.RpcStatus` in the `onError` callback.
 
@@ -131,6 +131,53 @@ client.wallet.ensureWallet(
     onError = { status, ex ->
         println("wallet error: code=${status?.code} message=${status?.message} ex=${ex?.message}")
     },
+)
+```
+
+Frontend wallet routes use the JWT identity and let the API boundary apply configured defaults:
+
+```kotlin
+import com.tuti.api.wallet.v1.CreateWalletRequest
+import com.tuti.api.wallet.v1.WalletPaymentMethodQuery
+
+client.wallet.createWallet(
+    CreateWalletRequest(currency = "SDG"),
+    onResponse = { wallet -> println(wallet.id) },
+    onError = { error, ex -> println(error?.message ?: ex?.message) },
+)
+
+client.wallet.listPaymentMethods(
+    WalletPaymentMethodQuery(direction = "deposit", currency = "SDG", region = "SD"),
+    onResponse = { methods -> println(methods.methods) },
+    onError = { error, ex -> println(error?.message ?: ex?.message) },
+)
+
+client.wallet.listTransactions(
+    walletId = "wallet-id",
+    onResponse = { history -> println(history.transactions) },
+    onError = { error, ex -> println(error?.message ?: ex?.message) },
+)
+```
+
+Deposits are started with the frontend/business reference. The provider transaction id is not part of the FE request; it is captured later from PSP webhooks or status responses.
+
+```kotlin
+import com.tuti.api.wallet.v1.DepositRequest
+
+client.wallet.requestDeposit(
+    DepositRequest(
+        tenantId = "tenant_1",
+        clientReference = "deposit_123",
+        providerCode = "psp_1",
+        walletId = "wallet-id",
+        ownerType = "user",
+        ownerId = "123",
+        amount = 5000,
+        currency = "SDG",
+        region = "SD",
+    ),
+    onResponse = { run -> println(run.workflowId) },
+    onError = { status, ex -> println(status?.message ?: ex?.message) },
 )
 ```
 

@@ -14,6 +14,7 @@ import com.tuti.api.ebs.EBSResponse
 import com.tuti.api.ebs.NoebsTransfer
 import com.tuti.api.wallet.v1.CompleteOwnershipVerificationBody
 import com.tuti.api.wallet.v1.ConfirmUser2FABody
+import com.tuti.api.wallet.v1.CreateWalletRequest
 import com.tuti.api.wallet.v1.CreateWithdrawalDestinationBody
 import com.tuti.api.wallet.v1.DeactivateWithdrawalDestinationBody
 import com.tuti.api.wallet.v1.DepositRequest
@@ -31,7 +32,11 @@ import com.tuti.api.wallet.v1.SignalManualTransferDecisionBody
 import com.tuti.api.wallet.v1.SignalWithdrawalApprovalBody
 import com.tuti.api.wallet.v1.SignalWithdrawalVerificationBody
 import com.tuti.api.wallet.v1.User2FASetup
+import com.tuti.api.wallet.v1.UserWallet
 import com.tuti.api.wallet.v1.Wallet
+import com.tuti.api.wallet.v1.WalletPaymentMethodList
+import com.tuti.api.wallet.v1.WalletPaymentMethodQuery
+import com.tuti.api.wallet.v1.WalletTransactionList
 import com.tuti.api.wallet.v1.WithdrawalDestination
 import com.tuti.api.wallet.v1.WithdrawalDestinationList
 import com.tuti.api.wallet.v1.WithdrawalRequest
@@ -498,6 +503,83 @@ class TutiApiClient(
      */
     inner class WalletApi {
 
+        fun createWallet(
+            request: CreateWalletRequest = CreateWalletRequest(),
+            onResponse: (UserWallet) -> Unit,
+            onError: (TutiResponse?, Exception?) -> Unit,
+        ) {
+            sendRequest<CreateWalletRequest, UserWallet, TutiResponse>(
+                method = RequestMethods.POST,
+                URL = "$walletBaseURL/wallets",
+                requestToBeSent = request,
+                onResponse = onResponse,
+                onError = onError,
+            )
+        }
+
+        fun getUserWallet(
+            walletId: String,
+            tenantId: String = "",
+            onResponse: (UserWallet) -> Unit,
+            onError: (TutiResponse?, Exception?) -> Unit,
+        ) {
+            sendRequest<String, UserWallet, TutiResponse>(
+                method = RequestMethods.GET,
+                URL = "$walletBaseURL/wallets/$walletId",
+                requestToBeSent = "",
+                onResponse = onResponse,
+                onError = onError,
+                params = queryParams("tenant_id" to tenantId),
+            )
+        }
+
+        fun listPaymentMethods(
+            query: WalletPaymentMethodQuery,
+            onResponse: (WalletPaymentMethodList) -> Unit,
+            onError: (TutiResponse?, Exception?) -> Unit,
+        ) {
+            sendRequest<String, WalletPaymentMethodList, TutiResponse>(
+                method = RequestMethods.GET,
+                URL = "$walletBaseURL/methods",
+                requestToBeSent = "",
+                onResponse = onResponse,
+                onError = onError,
+                params = queryParams(
+                    "direction" to query.direction,
+                    "currency" to query.currency,
+                    "region" to query.region,
+                    "amount" to query.amount?.toString().orEmpty(),
+                    "tenant_id" to query.tenantId,
+                    "limit" to query.limit.toString(),
+                    "offset" to query.offset.toString(),
+                ),
+            )
+        }
+
+        fun listTransactions(
+            walletId: String,
+            tenantId: String = "",
+            entryType: String = "",
+            limit: Int = 100,
+            offset: Int = 0,
+            onResponse: (WalletTransactionList) -> Unit,
+            onError: (TutiResponse?, Exception?) -> Unit,
+        ) {
+            sendRequest<String, WalletTransactionList, TutiResponse>(
+                method = RequestMethods.GET,
+                URL = "$walletBaseURL/wallets/$walletId/transactions",
+                requestToBeSent = "",
+                onResponse = onResponse,
+                onError = onError,
+                params = queryParams(
+                    "tenant_id" to tenantId,
+                    "entry_type" to entryType,
+                    "limit" to limit.toString(),
+                    "offset" to offset.toString(),
+                ),
+            )
+        }
+
         fun ensureWallet(
             request: EnsureWalletRequest,
             onResponse: (Wallet) -> Unit,
@@ -784,6 +866,17 @@ class TutiApiClient(
                 onResponse = { _ -> onResponse() },
                 onError = onError,
             )
+        }
+
+        private fun queryParams(vararg pairs: Pair<String, String>): Array<String> {
+            val params = mutableListOf<String>()
+            pairs.forEach { (key, value) ->
+                if (value.isNotBlank()) {
+                    params.add(key)
+                    params.add(value)
+                }
+            }
+            return params.toTypedArray()
         }
     }
 

@@ -1,6 +1,7 @@
 package com.tuti.api.wallet.v1
 
 import com.tuti.util.LongAsStringSerializer
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
@@ -75,7 +76,6 @@ data class DepositRequest(
     val walletId: String,
     val ownerType: String,
     val ownerId: String,
-    val pspTransactionId: String,
     @Serializable(with = LongAsStringSerializer::class)
     val amount: Long,
     val currency: String,
@@ -296,3 +296,110 @@ data class DisableUser2FABody(
     val code: String,
 )
 
+@Serializable
+data class CreateWalletRequest(
+    @SerialName("tenant_id")
+    val tenantId: String? = null,
+    @SerialName("user_id")
+    val userId: Long? = null,
+    val currency: String = "",
+)
+
+@Serializable
+data class UserWallet(
+    val id: String = "",
+    @SerialName("tenant_id")
+    val tenantId: String = "",
+    @SerialName("owner_type")
+    val ownerType: String = "",
+    @SerialName("owner_id")
+    val ownerId: String = "",
+    @SerialName("user_id")
+    val userId: Long? = null,
+    val currency: String = "",
+    val balance: Long = 0,
+    @SerialName("available_balance")
+    val availableBalance: Long = 0,
+    val status: String = "",
+    @SerialName("kyc_tier")
+    val kycTier: String = "",
+    @SerialName("created_at")
+    val createdAt: String = "",
+    @SerialName("updated_at")
+    val updatedAt: String = "",
+)
+
+@Serializable
+data class WalletPaymentMethodQuery(
+    val direction: String,
+    val currency: String = "",
+    val region: String = "",
+    val amount: Long? = null,
+    val tenantId: String = "",
+    val limit: Int = 100,
+    val offset: Int = 0,
+)
+
+@Serializable
+data class WalletPaymentMethodList(
+    val methods: List<WalletPaymentMethod> = emptyList(),
+)
+
+@Serializable
+data class WalletPaymentMethod(
+    @SerialName("provider_code")
+    val providerCode: String = "",
+    @SerialName("provider_name")
+    val providerName: String = "",
+    @SerialName("display_name")
+    val displayName: String = "",
+    @SerialName("method_type")
+    val methodType: String = "",
+    val direction: String = "",
+    val currencies: List<String> = emptyList(),
+    val regions: List<String> = emptyList(),
+    @SerialName("min_amount")
+    val minAmount: Long? = null,
+    @SerialName("max_amount")
+    val maxAmount: Long? = null,
+    @SerialName("input_schema")
+    val inputSchema: JsonElement? = null,
+    val presentation: JsonElement? = null,
+    @SerialName("supports_deposit")
+    val supportsDeposit: Boolean = false,
+    @SerialName("supports_withdrawal")
+    val supportsWithdrawal: Boolean = false,
+)
+
+@Serializable
+data class WalletTransactionList(
+    val transactions: List<WalletTransaction> = emptyList(),
+)
+
+@Serializable
+data class WalletTransaction(
+    val id: Long = 0,
+    @SerialName("tenant_id")
+    val tenantId: String = "",
+    @SerialName("transaction_id")
+    val transactionId: Long = 0,
+    @SerialName("wallet_id")
+    val walletId: String = "",
+    @SerialName("entry_type")
+    val entryType: String = "",
+    val amount: Long = 0,
+    val currency: String = "",
+    @SerialName("balance_after")
+    val balanceAfter: Long = 0,
+    @SerialName("wallet_sequence")
+    val walletSequence: Long = 0,
+    val status: String = "",
+    @SerialName("reference_type")
+    val referenceType: String = "",
+    @SerialName("reference_id")
+    val referenceId: String? = null,
+    val description: String? = null,
+    val metadata: JsonElement? = null,
+    @SerialName("created_at")
+    val createdAt: String = "",
+)

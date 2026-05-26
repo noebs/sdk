@@ -29,7 +29,6 @@ class WalletV1ModelsTest {
                 walletId = "wallet_1",
                 ownerType = "user",
                 ownerId = "user_1",
-                pspTransactionId = "psp_1",
                 amount = 100,
                 currency = "SDG",
                 feeAmount = null,
@@ -39,6 +38,21 @@ class WalletV1ModelsTest {
         assertFalse(json.contains("feeAmount"))
         assertFalse(json.contains("netAmount"))
         assertTrue(json.contains("\"amount\":\"100\""))
+    }
+
+    @Test
+    fun createWalletRequest_usesFiberRouteFieldNames() {
+        val json = TutiApiClient.Json.encodeToString(
+            CreateWalletRequest(
+                tenantId = "tenant_1",
+                userId = 123,
+                currency = "SDG",
+            )
+        )
+
+        assertTrue(json.contains("\"tenant_id\":\"tenant_1\""))
+        assertTrue(json.contains("\"user_id\":123"))
+        assertTrue(json.contains("\"currency\":\"SDG\""))
     }
 
     @Test
@@ -58,4 +72,3 @@ class WalletV1ModelsTest {
         assertFalse(json.contains("allowReturnToSource"))
     }
 }
-
