@@ -36,10 +36,23 @@ dependencies {
 
 `val tutiApiClient = TutiApiClient()` (defaults to `https://api.noebs.sd/`)
 
-2. Depending on which services you are using, some services need to be authenticated first, we do that this way:
+2. Load deployment app config during application startup. This pulls the configured tenant and public defaults from `/app/config` and applies `X-Tenant-ID` to SDK requests:
+
+```kotlin
+tutiApiClient.start(
+    onReady = { config ->
+        println("tenant=${config.tenantId} currency=${config.wallet.defaultCurrency}")
+    },
+    onError = { error, ex ->
+        println(error?.message ?: ex?.message)
+    },
+)
+```
+
+3. Depending on which services you are using, some services need to be authenticated first, we do that this way:
 `tutiApiClient.authToken = token`
 
-3. You are good to go now, let's start by a simple request that is getting (no)ebs public key:
+4. You are good to go now, let's start by a simple request that is getting (no)ebs public key:
 But before that **most** of function signatures are this way, only varies a few parameters
 
 ```kotlin

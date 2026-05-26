@@ -72,6 +72,8 @@ class TutiApiClient(
     var isSingleThreaded = false
     @Volatile var authToken: String = ""
     @Volatile var defaultHeaders: Map<String, String> = emptyMap()
+    @Volatile var appConfig: AppConfig? = null
+        private set
     var ipinUsername: String = ""
     var ipinPassword: String = ""
     var ebsKey: String = "MFwwDQYJKoZIhvcNAQEBBQADSwAwSAJBANx4gKYSMv3CrWWsxdPfxDxFvl+Is/0kc1dvMI1yNWDXI3AgdI4127KMUOv7gmwZ6SnRsHX/KAM0IPRe0+Sa0vMCAwEAAQ=="
@@ -97,11 +99,50 @@ class TutiApiClient(
         return if (base.contains("/consumer/")) base else base + "consumer/"
     }
 
+    fun start(
+        onReady: (AppConfig) -> Unit,
+        onError: (TutiResponse?, Exception?) -> Unit,
+    ): Call {
+        return loadAppConfig(onReady, onError)
+    }
+
+    fun loadAppConfig(
+        onResponse: (AppConfig) -> Unit,
+        onError: (TutiResponse?, Exception?) -> Unit,
+    ): Call {
+        return sendRequest<String, AppConfig, TutiResponse>(
+            method = RequestMethods.GET,
+            URL = noebsBaseURL + "app/config",
+            requestToBeSent = "",
+            onResponse = { config ->
+                applyAppConfig(config)
+                onResponse(config)
+            },
+            onError = onError,
+        )
+    }
+
+    private fun applyAppConfig(config: AppConfig) {
+        appConfig = config
+        val tenantId = config.tenantId.trim()
+        if (tenantId.isNotBlank()) {
+            defaultHeaders = defaultHeaders + ("X-Tenant-ID" to tenantId)
+        }
+    }
+
+    private fun configuredTenantId(): String {
+        return appConfig?.tenantId?.trim().orEmpty()
+    }
+
+    private fun configuredWalletCurrency(): String {
+        return appConfig?.wallet?.defaultCurrency?.trim().orEmpty()
+    }
+
     private fun fillRequestFields(card: Card, ipin: String, amount: Float): EBSRequest {
         val request = EBSRequest()
         val encryptedIPIN: String = IPINBlockGenerator.getIPINBlock(ipin, ebsKey, request.uuid)
         request.tranAmount = amount
-        request.tranCurrencyCode = "SDG"
+        request.tranCurrencyCode = configuredWalletCurrency().ifBlank { "SDG" }
         request.pan = card.PAN
         request.expDate = card.expiryDate
         request.IPIN = encryptedIPIN
@@ -508,10 +549,14 @@ class TutiApiClient(
             onResponse: (UserWallet) -> Unit,
             onError: (TutiResponse?, Exception?) -> Unit,
         ) {
+            val requestWithDefaults = request.copy(
+                tenantId = request.tenantId ?: configuredTenantId().ifBlank { null },
+                currency = request.currency.ifBlank { configuredWalletCurrency() },
+            )
             sendRequest<CreateWalletRequest, UserWallet, TutiResponse>(
                 method = RequestMethods.POST,
                 URL = "$walletBaseURL/wallets",
-                requestToBeSent = request,
+                requestToBeSent = requestWithDefaults,
                 onResponse = onResponse,
                 onError = onError,
             )
@@ -529,7 +574,7 @@ class TutiApiClient(
                 requestToBeSent = "",
                 onResponse = onResponse,
                 onError = onError,
-                params = queryParams("tenant_id" to tenantId),
+                params = queryParams("tenant_id" to tenantId.ifBlank { configuredTenantId() }),
             )
         }
 
@@ -546,10 +591,10 @@ class TutiApiClient(
                 onError = onError,
                 params = queryParams(
                     "direction" to query.direction,
-                    "currency" to query.currency,
+                    "currency" to query.currency.ifBlank { configuredWalletCurrency() },
                     "region" to query.region,
                     "amount" to query.amount?.toString().orEmpty(),
-                    "tenant_id" to query.tenantId,
+                    "tenant_id" to query.tenantId.ifBlank { configuredTenantId() },
                     "limit" to query.limit.toString(),
                     "offset" to query.offset.toString(),
                 ),
@@ -572,7 +617,7 @@ class TutiApiClient(
                 onResponse = onResponse,
                 onError = onError,
                 params = queryParams(
-                    "tenant_id" to tenantId,
+                    "tenant_id" to tenantId.ifBlank { configuredTenantId() },
                     "entry_type" to entryType,
                     "limit" to limit.toString(),
                     "offset" to offset.toString(),
@@ -585,10 +630,14 @@ class TutiApiClient(
             onResponse: (Wallet) -> Unit,
             onError: (RpcStatus?, Exception?) -> Unit,
         ) {
+            val requestWithDefaults = request.copy(
+                tenantId = request.tenantId.ifBlank { configuredTenantId() },
+                currency = request.currency.ifBlank { configuredWalletCurrency() },
+            )
             sendRequest<EnsureWalletRequest, Wallet, RpcStatus>(
                 method = RequestMethods.POST,
                 URL = walletBaseURL,
-                requestToBeSent = request,
+                requestToBeSent = requestWithDefaults,
                 onResponse = onResponse,
                 onError = onError,
             )
@@ -596,7 +645,7 @@ class TutiApiClient(
 
         fun getWallet(
             walletId: String,
-            tenantId: String,
+            tenantId: String = "",
             onResponse: (Wallet) -> Unit,
             onError: (RpcStatus?, Exception?) -> Unit,
         ) {
@@ -606,13 +655,13 @@ class TutiApiClient(
                 requestToBeSent = "",
                 onResponse = onResponse,
                 onError = onError,
-                params = arrayOf("tenantId", tenantId),
+                params = queryParams("tenantId" to tenantId.ifBlank { configuredTenantId() }),
             )
         }
 
         fun listFundingSources(
             walletId: String,
-            tenantId: String,
+            tenantId: String = "",
             onResponse: (FundingSourceList) -> Unit,
             onError: (RpcStatus?, Exception?) -> Unit,
         ) {
@@ -622,18 +671,18 @@ class TutiApiClient(
                 requestToBeSent = "",
                 onResponse = onResponse,
                 onError = onError,
-                params = arrayOf("tenantId", tenantId),
+                params = queryParams("tenantId" to tenantId.ifBlank { configuredTenantId() }),
             )
         }
 
         fun listWithdrawalDestinations(
             walletId: String,
-            tenantId: String,
+            tenantId: String = "",
             activeOnly: Boolean = false,
             onResponse: (WithdrawalDestinationList) -> Unit,
             onError: (RpcStatus?, Exception?) -> Unit,
         ) {
-            val params = mutableListOf("tenantId", tenantId)
+            val params = queryParams("tenantId" to tenantId.ifBlank { configuredTenantId() }).toMutableList()
             if (activeOnly) {
                 params.addAll(listOf("activeOnly", "true"))
             }
@@ -653,10 +702,14 @@ class TutiApiClient(
             onResponse: (WithdrawalDestination) -> Unit,
             onError: (RpcStatus?, Exception?) -> Unit,
         ) {
+            val requestWithDefaults = request.copy(
+                tenantId = request.tenantId.ifBlank { configuredTenantId() },
+                currency = request.currency.ifBlank { configuredWalletCurrency() },
+            )
             sendRequest<CreateWithdrawalDestinationBody, WithdrawalDestination, RpcStatus>(
                 method = RequestMethods.POST,
                 URL = "$walletBaseURL/$walletId/destinations",
-                requestToBeSent = request,
+                requestToBeSent = requestWithDefaults,
                 onResponse = onResponse,
                 onError = onError,
             )
@@ -668,10 +721,13 @@ class TutiApiClient(
             onResponse: () -> Unit,
             onError: (RpcStatus?, Exception?) -> Unit,
         ) {
+            val requestWithDefaults = request.copy(
+                tenantId = request.tenantId.ifBlank { configuredTenantId() },
+            )
             sendRequest<DeactivateWithdrawalDestinationBody, Unit, RpcStatus>(
                 method = RequestMethods.POST,
                 URL = "$walletBaseURL/destinations/$destinationId/deactivate",
-                requestToBeSent = request,
+                requestToBeSent = requestWithDefaults,
                 onResponse = { _ -> onResponse() },
                 onError = onError,
             )
@@ -683,10 +739,13 @@ class TutiApiClient(
             onResponse: (OwnershipVerification) -> Unit,
             onError: (RpcStatus?, Exception?) -> Unit,
         ) {
+            val requestWithDefaults = request.copy(
+                tenantId = request.tenantId.ifBlank { configuredTenantId() },
+            )
             sendRequest<RequestOwnershipVerificationBody, OwnershipVerification, RpcStatus>(
                 method = RequestMethods.POST,
                 URL = "$walletBaseURL/destinations/$destinationId/verify",
-                requestToBeSent = request,
+                requestToBeSent = requestWithDefaults,
                 onResponse = onResponse,
                 onError = onError,
             )
@@ -698,10 +757,13 @@ class TutiApiClient(
             onResponse: () -> Unit,
             onError: (RpcStatus?, Exception?) -> Unit,
         ) {
+            val requestWithDefaults = request.copy(
+                tenantId = request.tenantId.ifBlank { configuredTenantId() },
+            )
             sendRequest<CompleteOwnershipVerificationBody, Unit, RpcStatus>(
                 method = RequestMethods.POST,
                 URL = "$walletBaseURL/ownership_verifications/$verificationId/complete",
-                requestToBeSent = request,
+                requestToBeSent = requestWithDefaults,
                 onResponse = { _ -> onResponse() },
                 onError = onError,
             )
@@ -713,10 +775,13 @@ class TutiApiClient(
             onResponse: () -> Unit,
             onError: (RpcStatus?, Exception?) -> Unit,
         ) {
+            val requestWithDefaults = request.copy(
+                tenantId = request.tenantId.ifBlank { configuredTenantId() },
+            )
             sendRequest<SetWalletPINBody, Unit, RpcStatus>(
                 method = RequestMethods.POST,
                 URL = "$walletBaseURL/$walletId/pin",
-                requestToBeSent = request,
+                requestToBeSent = requestWithDefaults,
                 onResponse = { _ -> onResponse() },
                 onError = onError,
             )
@@ -727,10 +792,14 @@ class TutiApiClient(
             onResponse: (WorkflowRun) -> Unit,
             onError: (RpcStatus?, Exception?) -> Unit,
         ) {
+            val requestWithDefaults = request.copy(
+                tenantId = request.tenantId.ifBlank { configuredTenantId() },
+                currency = request.currency.ifBlank { configuredWalletCurrency() },
+            )
             sendRequest<P2PTransferRequest, WorkflowRun, RpcStatus>(
                 method = RequestMethods.POST,
                 URL = "$walletBaseURL/p2p",
-                requestToBeSent = request,
+                requestToBeSent = requestWithDefaults,
                 onResponse = onResponse,
                 onError = onError,
             )
@@ -741,10 +810,14 @@ class TutiApiClient(
             onResponse: (WorkflowRun) -> Unit,
             onError: (RpcStatus?, Exception?) -> Unit,
         ) {
+            val requestWithDefaults = request.copy(
+                tenantId = request.tenantId.ifBlank { configuredTenantId() },
+                currency = request.currency.ifBlank { configuredWalletCurrency() },
+            )
             sendRequest<DepositRequest, WorkflowRun, RpcStatus>(
                 method = RequestMethods.POST,
                 URL = "$walletBaseURL/deposits",
-                requestToBeSent = request,
+                requestToBeSent = requestWithDefaults,
                 onResponse = onResponse,
                 onError = onError,
             )
@@ -755,10 +828,14 @@ class TutiApiClient(
             onResponse: (WorkflowRun) -> Unit,
             onError: (RpcStatus?, Exception?) -> Unit,
         ) {
+            val requestWithDefaults = request.copy(
+                tenantId = request.tenantId.ifBlank { configuredTenantId() },
+                currency = request.currency.ifBlank { configuredWalletCurrency() },
+            )
             sendRequest<WithdrawalRequest, WorkflowRun, RpcStatus>(
                 method = RequestMethods.POST,
                 URL = "$walletBaseURL/withdrawals",
-                requestToBeSent = request,
+                requestToBeSent = requestWithDefaults,
                 onResponse = onResponse,
                 onError = onError,
             )
@@ -799,10 +876,14 @@ class TutiApiClient(
             onResponse: (WorkflowRun) -> Unit,
             onError: (RpcStatus?, Exception?) -> Unit,
         ) {
+            val requestWithDefaults = request.copy(
+                tenantId = request.tenantId.ifBlank { configuredTenantId() },
+                currency = request.currency.ifBlank { configuredWalletCurrency() },
+            )
             sendRequest<ManualTransferRequest, WorkflowRun, RpcStatus>(
                 method = RequestMethods.POST,
                 URL = "$walletBaseURL/manual_transfers",
-                requestToBeSent = request,
+                requestToBeSent = requestWithDefaults,
                 onResponse = onResponse,
                 onError = onError,
             )
@@ -829,10 +910,13 @@ class TutiApiClient(
             onResponse: (User2FASetup) -> Unit,
             onError: (RpcStatus?, Exception?) -> Unit,
         ) {
+            val requestWithDefaults = request.copy(
+                tenantId = request.tenantId.ifBlank { configuredTenantId() },
+            )
             sendRequest<EnrollUser2FABody, User2FASetup, RpcStatus>(
                 method = RequestMethods.POST,
                 URL = "$walletBaseURL/users/$userId/2fa/enroll",
-                requestToBeSent = request,
+                requestToBeSent = requestWithDefaults,
                 onResponse = onResponse,
                 onError = onError,
             )
@@ -844,10 +928,13 @@ class TutiApiClient(
             onResponse: () -> Unit,
             onError: (RpcStatus?, Exception?) -> Unit,
         ) {
+            val requestWithDefaults = request.copy(
+                tenantId = request.tenantId.ifBlank { configuredTenantId() },
+            )
             sendRequest<ConfirmUser2FABody, Unit, RpcStatus>(
                 method = RequestMethods.POST,
                 URL = "$walletBaseURL/users/$userId/2fa/confirm",
-                requestToBeSent = request,
+                requestToBeSent = requestWithDefaults,
                 onResponse = { _ -> onResponse() },
                 onError = onError,
             )
@@ -859,10 +946,13 @@ class TutiApiClient(
             onResponse: () -> Unit,
             onError: (RpcStatus?, Exception?) -> Unit,
         ) {
+            val requestWithDefaults = request.copy(
+                tenantId = request.tenantId.ifBlank { configuredTenantId() },
+            )
             sendRequest<DisableUser2FABody, Unit, RpcStatus>(
                 method = RequestMethods.POST,
                 URL = "$walletBaseURL/users/$userId/2fa/disable",
-                requestToBeSent = request,
+                requestToBeSent = requestWithDefaults,
                 onResponse = { _ -> onResponse() },
                 onError = onError,
             )

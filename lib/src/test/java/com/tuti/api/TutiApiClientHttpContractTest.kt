@@ -117,6 +117,62 @@ class TutiApiClientHttpContractTest {
     }
 
     @Test
+    fun loadAppConfig_setsTenantHeaderAndWalletDefaults() {
+        withServer { serverUrl, capture ->
+            val client = TutiApiClient(serverURL = serverUrl, noebsServer = serverUrl)
+            val error = AtomicReference<Throwable?>(null)
+
+            val configLatch = CountDownLatch(1)
+            client.loadAppConfig(
+                onResponse = {
+                    assertEquals("tenant_1", it.tenantId)
+                    assertEquals("SDG", it.wallet.defaultCurrency)
+                    configLatch.countDown()
+                },
+                onError = { _, ex ->
+                    error.set(AssertionError("loadAppConfig failed", ex))
+                    configLatch.countDown()
+                },
+            )
+            waitFor(configLatch)
+            assertNull(error.get())
+            assertEquals("/app/config", capture.path.get())
+            assertEquals("tenant_1", client.defaultHeaders["X-Tenant-ID"])
+
+            val createLatch = CountDownLatch(1)
+            client.wallet.createWallet(
+                CreateWalletRequest(),
+                onResponse = { createLatch.countDown() },
+                onError = { _, ex ->
+                    error.set(AssertionError("createWallet failed", ex))
+                    createLatch.countDown()
+                },
+            )
+            waitFor(createLatch)
+            assertNull(error.get())
+            assertEquals("/wallet/wallets", capture.path.get())
+            assertEquals("tenant_1", capture.header("X-Tenant-ID"))
+            assertEquals("tenant_1", capture.jsonBody("tenant_id"))
+            assertEquals("SDG", capture.jsonBody("currency"))
+
+            val methodsLatch = CountDownLatch(1)
+            client.wallet.listPaymentMethods(
+                WalletPaymentMethodQuery(direction = "deposit"),
+                onResponse = { methodsLatch.countDown() },
+                onError = { _, ex ->
+                    error.set(AssertionError("listPaymentMethods failed", ex))
+                    methodsLatch.countDown()
+                },
+            )
+            waitFor(methodsLatch)
+            assertNull(error.get())
+            assertEquals("/wallet/methods", capture.path.get())
+            assertTrue(capture.query.get().contains("tenant_id=tenant_1"))
+            assertTrue(capture.query.get().contains("currency=SDG"))
+        }
+    }
+
+    @Test
     fun walletUserRoutes_hitFrontendWalletEndpoints() {
         withServer { serverUrl, capture ->
             val client = TutiApiClient(serverURL = serverUrl, noebsServer = serverUrl)
@@ -298,6 +354,7 @@ class TutiApiClientHttpContractTest {
             "/consumer/bills" -> """{"ebs_response":{},"due_amount":{"amount":"10"}}"""
             "/consumer/bill_inquiry" -> """{"ebs_response":{}}"""
             "/consumer/transactions" -> "[]"
+            "/app/config" -> """{"tenant_id":"tenant_1","wallet":{"enabled":true,"default_currency":"SDG","pin_required":true},"oauth":{}}"""
             "/wallet/wallets" -> walletResponse()
             "/wallet/wallets/wallet_1" -> walletResponse()
             "/wallet/deposits" -> """{"workflowId":"workflow_1","runId":"run_1"}"""
