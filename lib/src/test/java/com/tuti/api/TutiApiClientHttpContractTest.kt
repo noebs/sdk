@@ -328,6 +328,56 @@ class TutiApiClientHttpContractTest {
         }
     }
 
+    @Test
+    fun cardRegistrationStartAndCompletion_hitEbsAdapterRoutes() {
+        withServer { serverUrl, capture ->
+            val client = TutiApiClient(serverURL = serverUrl)
+            val error = AtomicReference<Throwable?>(null)
+
+            val startLatch = CountDownLatch(1)
+            client.startCardRegistration(
+                EBSRequest().apply {
+                    panCategory = "01"
+                    phoneNo = "249912345678"
+                    registrationType = "01"
+                },
+                onResponse = { startLatch.countDown() },
+                onError = { _, ex ->
+                    error.set(AssertionError("startCardRegistration failed", ex))
+                    startLatch.countDown()
+                },
+            )
+            waitFor(startLatch)
+            assertNull(error.get())
+            assertEquals("/consumer/cards/new", capture.path.get())
+            assertEquals("249912345678", capture.jsonBody("phoneNo"))
+
+            val completeLatch = CountDownLatch(1)
+            client.completeCardRegistration(
+                EBSRequest().apply {
+                    otp = "123456"
+                    IPIN = "encrypted-ipin"
+                    originalTranUUID = "original-uuid"
+                    userPassword = "ebs-password"
+                    password = "local-password"
+                    mobile = "0912345678"
+                },
+                onResponse = { completeLatch.countDown() },
+                onError = { _, ex ->
+                    error.set(AssertionError("completeCardRegistration failed", ex))
+                    completeLatch.countDown()
+                },
+            )
+            waitFor(completeLatch)
+            assertNull(error.get())
+            assertEquals("/consumer/cards/complete", capture.path.get())
+            assertEquals("original-uuid", capture.jsonBody("originalTranUUID"))
+            assertEquals("ebs-password", capture.jsonBody("userPassword"))
+            assertEquals("local-password", capture.jsonBody("password"))
+            assertEquals("0912345678", capture.jsonBody("mobile"))
+        }
+    }
+
     private fun withServer(block: (String, Capture) -> Unit) {
         val capture = Capture()
         val server = HttpServer.create(InetSocketAddress(0), 0)

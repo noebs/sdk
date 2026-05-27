@@ -1022,6 +1022,34 @@ class TutiApiClient(
         )
     }
 
+    fun startCardRegistration(
+        request: EBSRequest,
+        onResponse: (TutiResponse) -> Unit,
+        onError: (TutiResponse?, Exception?) -> Unit
+    ) {
+        sendRequest(
+            RequestMethods.POST,
+            consumerURL + Operations.CARD_ISSUANCE,
+            request,
+            onResponse,
+            onError,
+        )
+    }
+
+    fun completeCardRegistration(
+        request: EBSRequest,
+        onResponse: (TutiResponse) -> Unit,
+        onError: (TutiResponse?, Exception?) -> Unit
+    ) {
+        sendRequest(
+            RequestMethods.POST,
+            consumerURL + Operations.CARD_COMPLETION,
+            request,
+            onResponse,
+            onError,
+        )
+    }
+
     fun getNotifications(
         filters: NotificationFilters,
         onResponse: (List<Notification>) -> Unit,
