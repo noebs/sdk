@@ -25,7 +25,7 @@ object Operations {
     const val BENEFICIARY = "beneficiary"
     const val BILL_PAYMENT = "bill_payment"
     const val Get_Bills = "bills"
-    const val GUESS_Biller = "guess_biller"
+    const val BILLER = "biller"
     const val BILL_INQUIRY = "bill_inquiry"
     const val CARD_ISSUANCE = "cards/new"
     const val CARD_COMPLETION = "cards/complete"

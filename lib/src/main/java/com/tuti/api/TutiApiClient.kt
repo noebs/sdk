@@ -1590,14 +1590,14 @@ class TutiApiClient(
         )
     }
 
-    fun guessBillerId(
+    fun getCachedBillerId(
         mobile: String,
         onResponse: (TutiResponse) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit
     ) {
         sendRequest(
             RequestMethods.GET,
-            consumerURL + Operations.GUESS_Biller,
+            consumerURL + Operations.BILLER,
             "",
             onResponse,
             onError,
