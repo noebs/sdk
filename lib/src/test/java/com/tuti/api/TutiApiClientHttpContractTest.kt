@@ -3,6 +3,7 @@ package com.tuti.api
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import com.tuti.api.authentication.SignInRequest
+import com.tuti.api.data.Card
 import com.tuti.api.wallet.v1.CreateWalletRequest
 import com.tuti.api.wallet.v1.DepositRequest
 import com.tuti.api.wallet.v1.WalletPaymentMethodQuery
@@ -12,6 +13,7 @@ import kotlinx.serialization.decodeFromString
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.net.InetSocketAddress
@@ -20,6 +22,25 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
 class TutiApiClientHttpContractTest {
+    @Test
+    fun cardHelpersRequireLoadedWalletCurrency() {
+        val client = TutiApiClient(serverURL = "http://127.0.0.1:1/")
+        val card = Card(PAN = "6392561234567890", expiryDate = "2512")
+
+        val err = assertThrows(IllegalStateException::class.java) {
+            client.cardTransfer(
+                card = card,
+                ipin = "1234",
+                receiverCard = card,
+                amount = 10f,
+                onResponse = {},
+                onError = { _, _ -> },
+            )
+        }
+
+        assertTrue(err.message.orEmpty().contains("wallet default currency is required"))
+    }
+
     @Test
     fun legacySignInOverload_sendsMobileField() {
         withServer { serverUrl, capture ->
@@ -169,6 +190,24 @@ class TutiApiClientHttpContractTest {
             assertEquals("/wallet/methods", capture.path.get())
             assertTrue(capture.query.get().contains("tenant_id=tenant_1"))
             assertTrue(capture.query.get().contains("currency=SDG"))
+
+            val card = Card(PAN = "6392561234567890", expiryDate = "2512")
+            val cardTransferLatch = CountDownLatch(1)
+            client.cardTransfer(
+                card = card,
+                ipin = "1234",
+                receiverCard = card,
+                amount = 10f,
+                onResponse = { cardTransferLatch.countDown() },
+                onError = { _, ex ->
+                    error.set(AssertionError("cardTransfer failed", ex))
+                    cardTransferLatch.countDown()
+                },
+            )
+            waitFor(cardTransferLatch)
+            assertNull(error.get())
+            assertEquals("/consumer/p2p", capture.path.get())
+            assertTrue(capture.body.get().contains("\"tranCurrencyCode\":\"SDG\""))
         }
     }
 

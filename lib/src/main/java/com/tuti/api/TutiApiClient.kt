@@ -138,11 +138,19 @@ class TutiApiClient(
         return appConfig?.wallet?.defaultCurrency?.trim().orEmpty()
     }
 
+    private fun requireConfiguredWalletCurrency(): String {
+        val currency = configuredWalletCurrency()
+        check(currency.isNotBlank()) {
+            "wallet default currency is required; call loadAppConfig/start before using card helpers"
+        }
+        return currency
+    }
+
     private fun fillRequestFields(card: Card, ipin: String, amount: Float): EBSRequest {
         val request = EBSRequest()
         val encryptedIPIN: String = IPINBlockGenerator.getIPINBlock(ipin, ebsKey, request.uuid)
         request.tranAmount = amount
-        request.tranCurrencyCode = configuredWalletCurrency().ifBlank { "SDG" }
+        request.tranCurrencyCode = requireConfiguredWalletCurrency()
         request.pan = card.PAN
         request.expDate = card.expiryDate
         request.IPIN = encryptedIPIN
