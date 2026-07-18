@@ -150,7 +150,7 @@ class OperationClaimMismatchException(
 class OpaqueCardOperationRequiredException(
     val operation: String,
 ) : IllegalStateException(
-    "$operation is disabled: use an opaque card authorization with a caller-persisted OperationIdentity"
+    "$operation is disabled: use opaque card IDs and a caller-persisted OperationIdentity for rail operations"
 )
 
 internal fun requireRequestClaim(value: String) {

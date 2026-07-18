@@ -5,6 +5,7 @@ import kotlinx.serialization.Serializable
 import java.util.UUID
 
 private val MASKED_PAN = Regex("^\\*{4}[0-9]{4}$")
+private val CARD_EXPIRY = Regex("^[0-9]{4}$")
 
 /**
  * A card enrollment selector. It is an authenticated resource identifier, not a bearer secret and
@@ -36,8 +37,14 @@ data class CardSummary(
 ) {
     init {
         requireCanonicalCardId(cardId)
+        require(name == name.trim() && name.length <= 100) {
+            "card name must be normalized and at most 100 characters"
+        }
         require(MASKED_PAN.matches(maskedPan)) {
             "masked_pan must contain exactly four asterisks followed by the last four digits"
+        }
+        require(CARD_EXPIRY.matches(expiryDate)) {
+            "exp_date must contain exactly four digits"
         }
         require(status.isNotBlank() && status == status.trim()) {
             "status must be a normalized non-blank value"
@@ -48,12 +55,24 @@ data class CardSummary(
 @Serializable
 data class CardSummaries(
     val cards: List<CardSummary> = emptyList(),
-)
+) {
+    init {
+        require(cards.map(CardSummary::cardId).distinct().size == cards.size) {
+            "cards must not contain duplicate card_id values"
+        }
+    }
+}
 
 @Serializable
 data class UpdateCardMetadataRequest(
     val name: String,
-)
+) {
+    init {
+        require(name == name.trim() && name.length <= 100) {
+            "card name must be normalized and at most 100 characters"
+        }
+    }
+}
 
 internal fun requireCanonicalCardId(cardId: String) {
     requireCanonicalUuid(cardId, "card_id")

@@ -4,7 +4,11 @@ import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import com.tuti.api.authentication.SignInRequest
 import com.tuti.api.data.Card
+import com.tuti.api.data.CardEnrollmentIntent
+import com.tuti.api.data.CardRef
 import com.tuti.api.data.OpaqueCardOperationRequiredException
+import com.tuti.api.data.SetMainCardRequest
+import com.tuti.api.data.SignUpCard
 import com.tuti.api.wallet.v1.CreateWalletRequest
 import com.tuti.api.wallet.v1.DepositRequest
 import com.tuti.api.wallet.v1.WalletPaymentMethodQuery
@@ -12,6 +16,7 @@ import com.tuti.api.ebs.EBSRequest
 import com.tuti.api.ebs.NoebsTransfer
 import com.tuti.model.BillInfo
 import kotlinx.serialization.decodeFromString
+import okhttp3.logging.HttpLoggingInterceptor
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
@@ -40,7 +45,7 @@ class TutiApiClientHttpContractTest {
             )
         }
 
-        assertTrue(err.message.orEmpty().contains("opaque card authorization"))
+        assertTrue(err.message.orEmpty().contains("opaque card IDs"))
     }
 
     @Test
@@ -376,7 +381,166 @@ class TutiApiClientHttpContractTest {
         }
     }
 
+    @Test
+    fun opaqueCardApiCompletesEnrollmentAndCrudByOpaqueId() {
+        withServer { serverUrl, capture ->
+            val client = TutiApiClient(serverURL = serverUrl)
+            client.authToken = "Bearer alpha-user"
+            val error = AtomicReference<Throwable?>(null)
+            val intentRef = AtomicReference<CardEnrollmentIntent>()
+
+            val intentLatch = CountDownLatch(1)
+            client.cards.createEnrollmentIntent(
+                onResponse = {
+                    intentRef.set(it)
+                    intentLatch.countDown()
+                },
+                onError = { _, ex ->
+                    error.set(ex ?: AssertionError("create enrollment intent failed"))
+                    intentLatch.countDown()
+                },
+            )
+            waitFor(intentLatch)
+            assertNull(error.get())
+            assertEquals("POST", capture.method.get())
+            assertEquals("/consumer/cards/enrollment-intents", capture.path.get())
+            assertEquals("Bearer alpha-user", capture.header("Authorization"))
+
+            val intent = intentRef.get()
+            val confirmation = intent.confirmation(
+                pan = "4242424242424242",
+                expiryDate = "2912",
+                name = "Daily",
+                ipin = "1234",
+            )
+            val confirmLatch = CountDownLatch(1)
+            client.cards.confirmEnrollment(
+                intent = intent,
+                confirmation = confirmation,
+                onResponse = {
+                    assertEquals("123e4567-e89b-12d3-a456-426614174020", it.cardId)
+                    assertEquals("****4242", it.maskedPan)
+                    confirmLatch.countDown()
+                },
+                onError = { _, ex ->
+                    error.set(ex ?: AssertionError("confirm enrollment failed"))
+                    confirmLatch.countDown()
+                },
+            )
+            waitFor(confirmLatch)
+            assertNull(error.get())
+            assertEquals("POST", capture.method.get())
+            assertEquals(
+                "/consumer/cards/enrollment-intents/${intent.enrollmentId}/confirm",
+                capture.path.get(),
+            )
+            assertEquals("4242424242424242", capture.jsonBody("pan"))
+            assertFalse(capture.body.get().contains("\"ipin\":"))
+            assertTrue(capture.body.get().contains("\"ipin_block\":"))
+
+            val listLatch = CountDownLatch(1)
+            client.cards.list(
+                onResponse = {
+                    assertEquals(2, it.size)
+                    assertEquals("****4242", it[0].maskedPan)
+                    assertEquals("****4242", it[1].maskedPan)
+                    assertFalse(it[0].cardId == it[1].cardId)
+                    listLatch.countDown()
+                },
+                onError = { _, ex ->
+                    error.set(ex ?: AssertionError("list cards failed"))
+                    listLatch.countDown()
+                },
+            )
+            waitFor(listLatch)
+            assertNull(error.get())
+            assertEquals("GET", capture.method.get())
+            assertEquals("/consumer/cards", capture.path.get())
+
+            val card = CardRef("123e4567-e89b-12d3-a456-426614174021")
+            val renameLatch = CountDownLatch(1)
+            client.cards.rename(card, "Trips", renameLatch::countDown) { _, ex ->
+                error.set(ex ?: AssertionError("rename card failed"))
+                renameLatch.countDown()
+            }
+            waitFor(renameLatch)
+            assertNull(error.get())
+            assertEquals("PATCH", capture.method.get())
+            assertEquals("/consumer/cards/${card.cardId}", capture.path.get())
+            assertEquals("Trips", capture.jsonBody("name"))
+
+            val mainLatch = CountDownLatch(1)
+            client.cards.setMain(card, mainLatch::countDown) { _, ex ->
+                error.set(ex ?: AssertionError("set main card failed"))
+                mainLatch.countDown()
+            }
+            waitFor(mainLatch)
+            assertNull(error.get())
+            assertEquals("PUT", capture.method.get())
+            assertEquals("/consumer/cards/${card.cardId}/main", capture.path.get())
+
+            val retireLatch = CountDownLatch(1)
+            client.cards.retire(card, retireLatch::countDown) { _, ex ->
+                error.set(ex ?: AssertionError("retire card failed"))
+                retireLatch.countDown()
+            }
+            waitFor(retireLatch)
+            assertNull(error.get())
+            assertEquals("DELETE", capture.method.get())
+            assertEquals("/consumer/cards/${card.cardId}", capture.path.get())
+        }
+    }
+
+    @Test
+    fun bodyLoggingAndLegacyPanCardRoutesFailBeforeNetwork() {
+        assertThrows(IllegalArgumentException::class.java) {
+            TutiApiClient.setHttpLoggingLevel(HttpLoggingInterceptor.Level.BODY)
+        }
+        TutiApiClient.setHttpLoggingLevel(HttpLoggingInterceptor.Level.NONE)
+
+        withServer { serverUrl, capture ->
+            val client = TutiApiClient(serverURL = serverUrl)
+            val card = Card(PAN = "4242424242424242", expiryDate = "2912")
+            val error: (com.tuti.api.data.TutiResponse?, Exception?) -> Unit = { _, _ -> }
+
+            assertThrows(OpaqueCardOperationRequiredException::class.java) {
+                client.SignupWithCard(
+                    SignUpCard("Daily", "2912", "4242424242424242", "0912345678", "Password1!", "pub"),
+                    {},
+                    error,
+                )
+            }
+            assertThrows(OpaqueCardOperationRequiredException::class.java) {
+                client.startCardRegistration(EBSRequest(), {}, error)
+            }
+            assertThrows(OpaqueCardOperationRequiredException::class.java) {
+                client.completeCardRegistration(EBSRequest(), {}, error)
+            }
+            assertThrows(OpaqueCardOperationRequiredException::class.java) {
+                client.getCards({}, error)
+            }
+            assertThrows(OpaqueCardOperationRequiredException::class.java) {
+                client.addCard(card, {}, error)
+            }
+            assertThrows(OpaqueCardOperationRequiredException::class.java) {
+                client.editCard(card, {}, error)
+            }
+            assertThrows(OpaqueCardOperationRequiredException::class.java) {
+                client.deleteCard(card, {}, error)
+            }
+            assertThrows(OpaqueCardOperationRequiredException::class.java) {
+                client.getUserCard("0912345678", {}, error)
+            }
+            assertThrows(OpaqueCardOperationRequiredException::class.java) {
+                client.setMainCard(SetMainCardRequest(PAN = card.PAN), {}, error)
+            }
+            assertEquals("", capture.path.get())
+            assertEquals("", capture.body.get())
+        }
+    }
+
     private data class Capture(
+        val method: AtomicReference<String> = AtomicReference(""),
         val path: AtomicReference<String> = AtomicReference(""),
         val query: AtomicReference<String> = AtomicReference(""),
         val body: AtomicReference<String> = AtomicReference(""),
@@ -392,56 +556,6 @@ class TutiApiClientHttpContractTest {
 
         fun header(name: String): String? {
             return headers.get().entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value?.firstOrNull()
-        }
-    }
-
-    @Test
-    fun cardRegistrationStartAndCompletion_hitEbsAdapterRoutes() {
-        withServer { serverUrl, capture ->
-            val client = TutiApiClient(serverURL = serverUrl)
-            val error = AtomicReference<Throwable?>(null)
-
-            val startLatch = CountDownLatch(1)
-            client.startCardRegistration(
-                EBSRequest().apply {
-                    panCategory = "01"
-                    phoneNo = "249912345678"
-                    registrationType = "01"
-                },
-                onResponse = { startLatch.countDown() },
-                onError = { _, ex ->
-                    error.set(AssertionError("startCardRegistration failed", ex))
-                    startLatch.countDown()
-                },
-            )
-            waitFor(startLatch)
-            assertNull(error.get())
-            assertEquals("/consumer/cards/new", capture.path.get())
-            assertEquals("249912345678", capture.jsonBody("phoneNo"))
-
-            val completeLatch = CountDownLatch(1)
-            client.completeCardRegistration(
-                EBSRequest().apply {
-                    otp = "123456"
-                    IPIN = "encrypted-ipin"
-                    originalTranUUID = "original-uuid"
-                    userPassword = "ebs-password"
-                    password = "local-password"
-                    mobile = "0912345678"
-                },
-                onResponse = { completeLatch.countDown() },
-                onError = { _, ex ->
-                    error.set(AssertionError("completeCardRegistration failed", ex))
-                    completeLatch.countDown()
-                },
-            )
-            waitFor(completeLatch)
-            assertNull(error.get())
-            assertEquals("/consumer/cards/complete", capture.path.get())
-            assertEquals("original-uuid", capture.jsonBody("originalTranUUID"))
-            assertEquals("ebs-password", capture.jsonBody("userPassword"))
-            assertEquals("local-password", capture.jsonBody("password"))
-            assertEquals("0912345678", capture.jsonBody("mobile"))
         }
     }
 
@@ -461,6 +575,7 @@ class TutiApiClientHttpContractTest {
     }
 
     private fun handle(exchange: HttpExchange, capture: Capture) {
+        capture.method.set(exchange.requestMethod)
         capture.path.set(exchange.requestURI.path)
         capture.query.set(exchange.requestURI.rawQuery ?: "")
         capture.body.set(exchange.requestBody.bufferedReader().use { it.readText() })
@@ -471,6 +586,12 @@ class TutiApiClientHttpContractTest {
             "/consumer/bills" -> """{"ebs_response":{},"due_amount":{"amount":"10"}}"""
             "/consumer/bill_inquiry" -> """{"ebs_response":{}}"""
             "/consumer/transactions" -> "[]"
+            "/consumer/cards/enrollment-intents" ->
+                """{"enrollment_id":"123e4567-e89b-12d3-a456-426614174010","rail_uuid":"123e4567-e89b-12d3-a456-426614174011","expires_at":"2026-07-18T20:10:30.123456Z","rail_key":{"algorithm":"rsa_pkcs1_v1_5","key_id":"$TEST_EBS_KEY_ID","public_key":"$TEST_EBS_PUBLIC_KEY"}}"""
+            "/consumer/cards/enrollment-intents/123e4567-e89b-12d3-a456-426614174010/confirm" ->
+                """{"card_id":"123e4567-e89b-12d3-a456-426614174020","name":"Daily","masked_pan":"****4242","exp_date":"2912","is_main":true,"status":"active"}"""
+            "/consumer/cards" ->
+                """{"cards":[{"card_id":"123e4567-e89b-12d3-a456-426614174020","name":"Daily","masked_pan":"****4242","exp_date":"2912","is_main":true,"status":"active"},{"card_id":"123e4567-e89b-12d3-a456-426614174021","name":"Travel","masked_pan":"****4242","exp_date":"3012","is_main":false,"status":"active"}]}"""
             "/app/config" -> """{"tenant_id":"tenant_1","wallet":{"enabled":true,"default_currency":"SDG","pin_required":true},"oauth":{}}"""
             "/wallet/wallets" -> walletResponse()
             "/wallet/wallets/wallet_1" -> walletResponse()

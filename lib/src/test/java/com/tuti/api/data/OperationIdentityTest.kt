@@ -1,6 +1,7 @@
 package com.tuti.api.data
 
 import com.tuti.api.TutiApiClient
+import com.tuti.api.TEST_EBS_PUBLIC_KEY
 import com.tuti.api.ebs.EBSRequest
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -13,8 +14,7 @@ import org.junit.jupiter.api.Test
 class OperationIdentityTest {
     private val cardId = "123e4567-e89b-12d3-a456-426614174000"
     private val operationUuid = "123e4567-e89b-12d3-a456-426614174001"
-    private val ebsPublicKey =
-        "MFwwDQYJKoZIhvcNAQEBBQADSwAwSAJBANx4gKYSMv3CrWWsxdPfxDxFvl+Is/0kc1dvMI1yNWDXI3AgdI4127KMUOv7gmwZ6SnRsHX/KAM0IPRe0+Sa0vMCAwEAAQ=="
+    private val ebsPublicKey = TEST_EBS_PUBLIC_KEY
 
     @Test
     fun mobileTransferClaim_matchesTheCrossLanguageCanonicalVector() {

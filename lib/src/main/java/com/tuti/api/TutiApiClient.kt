@@ -49,6 +49,7 @@ import kotlinx.serialization.modules.SerializersModule
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.Interceptor
 import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -62,6 +63,9 @@ import okhttp3.logging.HttpLoggingInterceptor
 import java.io.IOException
 import java.util.Date
 import java.util.concurrent.TimeUnit
+
+@PublishedApi
+internal object SensitiveRequestBody
 
 class TutiApiClient(
     val serverURL: String = "https://api.noebs.sd/",
@@ -87,6 +91,9 @@ class TutiApiClient(
      * Wallet API (gRPC-gateway) backing the `/wallet` endpoints (see `proto/noebs/wallet/v1/wallet.proto`).
      */
     val wallet: WalletApi = WalletApi()
+
+    /** Opaque card enrollment and management API. */
+    val cards: CardApi = CardApi()
 
     private fun ensureTrailingSlash(url: String): String {
         val trimmed = url.trim()
@@ -960,6 +967,86 @@ class TutiApiClient(
         }
     }
 
+    inner class CardApi {
+        fun list(
+            onResponse: (List<CardSummary>) -> Unit,
+            onError: (TutiResponse?, Exception?) -> Unit,
+        ): Call = sendRequest<String, CardSummaries, TutiResponse>(
+            method = RequestMethods.GET,
+            URL = consumerURL + "cards",
+            requestToBeSent = "",
+            onResponse = { onResponse(it.cards) },
+            onError = onError,
+        )
+
+        fun createEnrollmentIntent(
+            onResponse: (CardEnrollmentIntent) -> Unit,
+            onError: (TutiResponse?, Exception?) -> Unit,
+        ): Call = sendRequest<Map<String, String>, CardEnrollmentIntent, TutiResponse>(
+            method = RequestMethods.POST,
+            URL = consumerURL + "cards/enrollment-intents",
+            requestToBeSent = emptyMap(),
+            onResponse = onResponse,
+            onError = onError,
+        )
+
+        fun confirmEnrollment(
+            intent: CardEnrollmentIntent,
+            confirmation: ConfirmCardEnrollmentRequest,
+            onResponse: (CardSummary) -> Unit,
+            onError: (TutiResponse?, Exception?) -> Unit,
+        ): Call {
+            require(confirmation.railUuid == intent.railUuid) {
+                "enrollment confirmation rail_uuid must match its intent"
+            }
+            return sendRequest<ConfirmCardEnrollmentRequest, CardSummary, TutiResponse>(
+                method = RequestMethods.POST,
+                URL = consumerURL + "cards/enrollment-intents/${intent.enrollmentId}/confirm",
+                requestToBeSent = confirmation,
+                onResponse = onResponse,
+                onError = onError,
+                sensitiveBody = true,
+            )
+        }
+
+        fun rename(
+            card: CardRef,
+            name: String,
+            onResponse: () -> Unit,
+            onError: (TutiResponse?, Exception?) -> Unit,
+        ): Call = sendRequest<UpdateCardMetadataRequest, Unit, TutiResponse>(
+            method = RequestMethods.PATCH,
+            URL = consumerURL + "cards/${card.cardId}",
+            requestToBeSent = UpdateCardMetadataRequest(name),
+            onResponse = { onResponse() },
+            onError = onError,
+        )
+
+        fun retire(
+            card: CardRef,
+            onResponse: () -> Unit,
+            onError: (TutiResponse?, Exception?) -> Unit,
+        ): Call = sendRequest<Map<String, String>, Unit, TutiResponse>(
+            method = RequestMethods.DELETE,
+            URL = consumerURL + "cards/${card.cardId}",
+            requestToBeSent = emptyMap(),
+            onResponse = { onResponse() },
+            onError = onError,
+        )
+
+        fun setMain(
+            card: CardRef,
+            onResponse: () -> Unit,
+            onError: (TutiResponse?, Exception?) -> Unit,
+        ): Call = sendRequest<Map<String, String>, Unit, TutiResponse>(
+            method = RequestMethods.PUT,
+            URL = consumerURL + "cards/${card.cardId}/main",
+            requestToBeSent = emptyMap(),
+            onResponse = { onResponse() },
+            onError = onError,
+        )
+    }
+
 
     @Deprecated(
         message = "Replace with SignUp with new kotlin classes instead.",
@@ -998,46 +1085,31 @@ class TutiApiClient(
         )
     }
 
+    @Deprecated("Use cards.createEnrollmentIntent and cards.confirmEnrollment after authentication.")
     fun SignupWithCard(
         signUpRequest: SignUpCard?,
         onResponse: (SignUpResponse) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit
     ) {
-        sendRequest(
-            RequestMethods.POST,
-            consumerURL + Operations.SIGN_UP_WITH_CARD,
-            signUpRequest,
-            onResponse,
-            onError,
-        )
+        legacyFinancialOperationUnavailable("SignupWithCard")
     }
 
+    @Deprecated("Legacy PAN card issuance is retired; use cards.createEnrollmentIntent.")
     fun startCardRegistration(
         request: EBSRequest,
         onResponse: (TutiResponse) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit
     ) {
-        sendRequest(
-            RequestMethods.POST,
-            consumerURL + Operations.CARD_ISSUANCE,
-            request,
-            onResponse,
-            onError,
-        )
+        legacyFinancialOperationUnavailable("startCardRegistration")
     }
 
+    @Deprecated("Legacy PAN card completion is retired; use cards.confirmEnrollment.")
     fun completeCardRegistration(
         request: EBSRequest,
         onResponse: (TutiResponse) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit
     ) {
-        sendRequest(
-            RequestMethods.POST,
-            consumerURL + Operations.CARD_COMPLETION,
-            request,
-            onResponse,
-            onError,
-        )
+        legacyFinancialOperationUnavailable("completeCardRegistration")
     }
 
     fun getNotifications(
@@ -1088,17 +1160,12 @@ class TutiApiClient(
         legacyFinancialOperationUnavailable("sendEBSRequest")
     }
 
+    @Deprecated("Use cards.list, which returns opaque CardSummary values.")
     fun getCards(
         onResponse: (Cards) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit
     ) {
-        sendRequest(
-            RequestMethods.GET,
-            consumerURL + Operations.GET_CARDS,
-            "",
-            onResponse,
-            onError,
-        )
+        legacyFinancialOperationUnavailable("getCards")
     }
 
     fun getPublicKey(
@@ -1185,46 +1252,31 @@ class TutiApiClient(
         )
     }
 
+    @Deprecated("Use cards.createEnrollmentIntent and cards.confirmEnrollment.")
     fun addCard(
         card: Card,
         onResponse: (TutiResponse) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit
     ) {
-        sendRequest(
-            RequestMethods.POST,
-            consumerURL + Operations.ADD_CARD,
-            listOf(card),
-            onResponse,
-            onError,
-        )
+        legacyFinancialOperationUnavailable("addCard")
     }
 
+    @Deprecated("Use cards.rename with CardRef.")
     fun editCard(
         card: Card?,
         onResponse: (String) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit
     ) {
-        sendRequest(
-            RequestMethods.PUT,
-            consumerURL + Operations.EDIT_CARD,
-            card,
-            onResponse,
-            onError,
-        )
+        legacyFinancialOperationUnavailable("editCard")
     }
 
+    @Deprecated("Use cards.retire with CardRef.")
     fun deleteCard(
         card: Card?,
         onResponse: (String) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit
     ) {
-        sendRequest(
-            RequestMethods.DELETE,
-            consumerURL + Operations.DELETE_CARD,
-            card,
-            onResponse,
-            onError,
-        )
+        legacyFinancialOperationUnavailable("deleteCard")
     }
 
     /**
@@ -1760,21 +1812,13 @@ class TutiApiClient(
     }
 
 
+    @Deprecated("Recipient cards are private; use phone membership discovery instead.")
     fun getUserCard(
         mobile: String,
         onResponse: (UserCards) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit
     ) {
-        sendRequest(
-            RequestMethods.GET,
-            consumerURL + Operations.USER_CARDS,
-            "",
-            onResponse,
-            onError,
-            null,
-            "mobile",
-            mobile
-        )
+        legacyFinancialOperationUnavailable("getUserCard")
     }
 
     fun isUser(
@@ -1792,19 +1836,13 @@ class TutiApiClient(
         )
     }
 
+    @Deprecated("Use cards.setMain with CardRef.")
     fun setMainCard(
         card: SetMainCardRequest,
         onResponse: (SetMainCardResponse) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit
     ) {
-        sendRequest(
-            RequestMethods.POST,
-            consumerURL + Operations.SET_MAIN_CARD,
-            card,
-            onResponse,
-            onError,
-            null,
-        )
+        legacyFinancialOperationUnavailable("setMainCard")
     }
 
 
@@ -1887,7 +1925,8 @@ class TutiApiClient(
         crossinline onResponse: (ResponseType) -> Unit,
         crossinline onError: (ErrorType?, Exception?) -> Unit,
         headers: Map<String, String>? = null,
-        vararg params: String
+        vararg params: String,
+        sensitiveBody: Boolean = false,
     ): Call {
         require(params.size % 2 == 0) {
             "params must be an even number of key/value entries. Got ${params.size}."
@@ -1915,6 +1954,9 @@ class TutiApiClient(
         headers?.forEach { (key, value) ->
             requestBuilder.header(key, value)
         }
+        if (sensitiveBody) {
+            requestBuilder.tag(SensitiveRequestBody::class.java, SensitiveRequestBody)
+        }
 
         // check for http method set by the user
         val requestBody = if (method == RequestMethods.GET) {
@@ -1927,6 +1969,7 @@ class TutiApiClient(
             RequestMethods.POST -> requestBuilder.post(requireNotNull(requestBody))
             RequestMethods.DELETE -> requestBuilder.delete(requireNotNull(requestBody))
             RequestMethods.PUT -> requestBuilder.put(requireNotNull(requestBody))
+            RequestMethods.PATCH -> requestBuilder.patch(requireNotNull(requestBody))
             else -> requestBuilder.get()
         }
 
@@ -1991,21 +2034,41 @@ class TutiApiClient(
 
     companion object {
         val JSON: MediaType = "application/json; charset=utf-8".toMediaType()
-        private val httpLoggingInterceptor: HttpLoggingInterceptor =
-            HttpLoggingInterceptor().setLevel(HttpLoggingInterceptor.Level.NONE)
+        private val httpLoggingInterceptor = HttpLoggingInterceptor().apply {
+            redactHeader("Authorization")
+            redactHeader("Proxy-Authorization")
+            redactHeader("Cookie")
+            redactHeader("Set-Cookie")
+            redactHeader("X-Admin-Key")
+            redactHeader("X-Api-Key")
+            redactHeader("X-Noebs-Signature")
+            redactHeader("X-Workload-Signature")
+            level = HttpLoggingInterceptor.Level.NONE
+        }
+
+        private val safeHttpLoggingInterceptor = Interceptor { chain ->
+            if (chain.request().tag(SensitiveRequestBody::class.java) != null) {
+                chain.proceed(chain.request())
+            } else {
+                httpLoggingInterceptor.intercept(chain)
+            }
+        }
 
         /**
          * Enable/disable HTTP logging. Default is [HttpLoggingInterceptor.Level.NONE].
          *
-         * Warning: BODY logging may leak sensitive data (JWTs, PANs, IPIN-related payloads) into app logs.
+         * BODY logging is rejected because authentication and rail request bodies contain secrets.
          */
         @JvmStatic
         fun setHttpLoggingLevel(level: HttpLoggingInterceptor.Level) {
+            require(level != HttpLoggingInterceptor.Level.BODY) {
+                "BODY logging is unavailable because SDK requests contain secrets"
+            }
             httpLoggingInterceptor.level = level
         }
 
         val okHttpClient: OkHttpClient = OkHttpClient.Builder()
-            .addInterceptor(httpLoggingInterceptor)
+            .addInterceptor(safeHttpLoggingInterceptor)
             .connectTimeout(60, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)

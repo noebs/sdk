@@ -6,6 +6,7 @@ import com.tuti.api.authentication.SignUpResponse
 import com.tuti.api.data.PaymentToken
 import com.tuti.api.data.CardFundedOperationRef
 import com.tuti.api.data.CardSummary
+import com.tuti.api.data.CardSummaries
 import com.tuti.api.data.IsUser
 import com.tuti.api.data.IsUserResponse
 import com.tuti.api.data.OperationClaim
@@ -147,6 +148,14 @@ class ContractAlignmentTest {
         }
         assertThrows(IllegalArgumentException::class.java) {
             summary.copy(maskedPan = "••••3456")
+        }
+        val collidingMask = summary.copy(
+            cardId = "123e4567-e89b-12d3-a456-426614174001",
+            name = "Travel",
+        )
+        assertEquals(2, CardSummaries(listOf(summary, collidingMask)).cards.size)
+        assertThrows(IllegalArgumentException::class.java) {
+            CardSummaries(listOf(summary, summary.copy(name = "Duplicate identity")))
         }
     }
 

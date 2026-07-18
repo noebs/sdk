@@ -106,13 +106,43 @@ Note how the log is running outside the main looper, while the toast runs within
 
 ### HTTP Logging
 
-HTTP logging is disabled by default (to avoid leaking sensitive data into logs). You can enable it for debugging:
+HTTP logging is disabled by default. BASIC or HEADERS logging can be enabled for transport debugging; secret-bearing headers are redacted and BODY logging is rejected:
 
 ```kotlin
 import okhttp3.logging.HttpLoggingInterceptor
 
-TutiApiClient.setHttpLoggingLevel(HttpLoggingInterceptor.Level.BODY)
+TutiApiClient.setHttpLoggingLevel(HttpLoggingInterceptor.Level.BASIC)
 ```
+
+### Opaque card enrollment and management
+
+Authenticated card operations live under `client.cards`. Cards are selected only by canonical
+`card_id`; masks and names are display data and may collide.
+
+```kotlin
+client.cards.createEnrollmentIntent(
+    onResponse = { intent ->
+        val confirmation = intent.confirmation(
+            pan = panEnteredOnScreen,
+            expiryDate = expiryEnteredOnScreen,
+            name = displayName,
+            ipin = ipinEnteredOnScreen,
+        )
+        client.cards.confirmEnrollment(intent, confirmation, onCardEnrolled, onError)
+    },
+    onError = onError,
+)
+
+client.cards.list(
+    onResponse = { cards -> cards.forEach { println("${it.cardId}: ${it.maskedPan}") } },
+    onError = onError,
+)
+```
+
+The confirmation object contains one transient PAN and encrypted IPIN rail block. Do not persist,
+log, place in navigation state, or reuse it as card identity. Rename, retire, and main-card methods
+accept `CardRef(cardId)` and never accept a PAN selector. Legacy PAN card helpers throw
+`OpaqueCardOperationRequiredException` before network I/O.
 
 # Wallet API (v1)
 

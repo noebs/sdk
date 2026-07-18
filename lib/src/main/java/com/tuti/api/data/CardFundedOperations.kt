@@ -240,7 +240,7 @@ private fun requireMatchingEnvelope(
     OperationIdentity(uuid, requestClaim).requireClaim(claim)
 }
 
-private fun requireCanonicalBase64(value: String, fieldName: String) {
+internal fun requireCanonicalBase64(value: String, fieldName: String) {
     require(value.isNotEmpty() && value == value.trim()) { "$fieldName must not be blank" }
     val decoded = value.decodeBase64()
     require(decoded != null && decoded.size > 0 && decoded.base64() == value) {

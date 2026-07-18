@@ -24,7 +24,8 @@ This SDK has been modernized and contains breaking changes. Highlights below are
 - `runOnOwnThread` was removed.
 - `TutiApiClient.billInquiry(...)` now returns `okhttp3.Call` (instead of `Thread`).
 - `TutiApiClient.authToken` is now `@Volatile` to avoid stale reads across threads.
-- HTTP logging is now disabled by default; enable explicitly via `TutiApiClient.setHttpLoggingLevel(...)`.
+- HTTP logging is disabled by default. BASIC/HEADERS may be enabled explicitly; credential headers
+  are redacted, sensitive enrollment requests bypass logging, and BODY logging is rejected.
 
 ## Default Base URL
 
@@ -44,6 +45,16 @@ This SDK has been modernized and contains breaking changes. Highlights below are
   `OpaqueCardOperationRequiredException` before generating a UUID, encrypting an IPIN, or sending
   HTTP. `EBSRequest()` is now non-financial and has no implicit UUID; UUID-bound IPIN construction
   requires an explicit operation UUID and EBS public key.
+
+## Opaque Card Enrollment And CRUD
+
+- Use `client.cards.createEnrollmentIntent`, `confirmEnrollment`, `list`, `rename`, `retire`, and
+  `setMain`. Every durable selector is a canonical server-issued `card_id`.
+- `CardEnrollmentIntent.confirmation(...)` validates the server RSA key and its SHA-256 key ID,
+  creates a UUID-bound encrypted IPIN block, and returns a transient confirmation payload. Never
+  persist that payload, the entered PAN, or the clear/encrypted IPIN value.
+- `SignupWithCard`, legacy issuance/completion, `getCards`, PAN card CRUD, `getUserCard(mobile)`, and
+  PAN-based main-card selection now fail before HTTP. There is no fallback to retired routes.
 
 ## Wallet Idempotency Keys
 
