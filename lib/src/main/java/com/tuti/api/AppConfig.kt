@@ -9,6 +9,13 @@ data class AppConfig(
     val tenantId: String = "",
     val wallet: AppWalletConfig = AppWalletConfig(),
     val oauth: AppOAuthConfig = AppOAuthConfig(),
+    val features: AppFeatureConfig = AppFeatureConfig(),
+)
+
+@Serializable
+data class AppFeatureConfig(
+    @SerialName("opaque_card_ids")
+    val opaqueCardIds: Boolean = false,
 )
 
 @Serializable
