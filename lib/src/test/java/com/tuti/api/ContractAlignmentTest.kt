@@ -22,16 +22,30 @@ import org.junit.jupiter.api.Test
 
 class ContractAlignmentTest {
     @Test
-    fun appConfig_requiresAnExplicitOpaqueCardCapability() {
+    fun appConfig_requiresExplicitIndependentAlphaCapabilities() {
         val absent = TutiApiClient.Json.decodeFromString<AppConfig>(
             """{"tenant_id":"tenant_1"}"""
         )
         val enabled = TutiApiClient.Json.decodeFromString<AppConfig>(
-            """{"tenant_id":"tenant_1","features":{"opaque_card_ids":true}}"""
+            """{
+                "tenant_id":"tenant_1",
+                "features":{
+                    "opaque_card_management":true,
+                    "opaque_balance":true,
+                    "chat":true,
+                    "notifications":true
+                }
+            }""".trimIndent()
         )
 
-        assertFalse(absent.features.opaqueCardIds)
-        assertTrue(enabled.features.opaqueCardIds)
+        assertFalse(absent.features.opaqueCardManagement)
+        assertFalse(absent.features.opaqueBalance)
+        assertFalse(absent.features.chat)
+        assertFalse(absent.features.notifications)
+        assertTrue(enabled.features.opaqueCardManagement)
+        assertTrue(enabled.features.opaqueBalance)
+        assertTrue(enabled.features.chat)
+        assertTrue(enabled.features.notifications)
     }
 
     @Test

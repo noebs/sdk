@@ -14,8 +14,12 @@ data class AppConfig(
 
 @Serializable
 data class AppFeatureConfig(
-    @SerialName("opaque_card_ids")
-    val opaqueCardIds: Boolean = false,
+    @SerialName("opaque_card_management")
+    val opaqueCardManagement: Boolean = false,
+    @SerialName("opaque_balance")
+    val opaqueBalance: Boolean = false,
+    val chat: Boolean = false,
+    val notifications: Boolean = false,
 )
 
 @Serializable
