@@ -27,6 +27,9 @@ data class SignInRequest(
 )
 
 @Serializable
+@Deprecated(
+        message = "Legacy signup is retired; use com.tuti.api.authentication.SignUpRequest.",
+)
 data class SignupRequest(
         @SerialName("password")
         val password: String,
@@ -67,7 +70,7 @@ data class Notification(
         @SerialName("uuid") val uuid: String? = null,
         @SerialName("is_read") val isRead: Boolean?,
         @SerialName("call_to_action") val callToAction: String?,
-        @SerialName("payment_request") val paymentToken: PaymentToken?,
+        @SerialName("payment_request") val paymentToken: PaymentToken? = null,
         @SerialName("transaction_uuid") val transactionUuid: String? = null,
 ) {
         init {

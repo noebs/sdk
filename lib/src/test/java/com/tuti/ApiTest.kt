@@ -17,7 +17,6 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
-import java.util.*
 
 @Disabled("Integration test: requires a live noebs instance and test credentials.")
 class ApiTest {
@@ -68,13 +67,13 @@ class ApiTest {
         val email = "test_$tag@test.com"
         val fullname = Utils.generateARandomName() + " " + Utils.generateARandomName()
         val password = Utils.generateRandomAlphanumericString(12) + "A1."
-        val isMerchant = Random().nextBoolean()
-        val info = SignUpRequest(mobileNumber = mobileNumber,
-                password = password,
-                username = username,
-                fullname = fullname,
-                email = email,
-                isMerchant = isMerchant
+        val info = SignUpRequest(
+            mobileNumber = mobileNumber,
+            password = password,
+            userPubKey = "test-public-key",
+            fullname = fullname,
+            username = username,
+            email = email,
         )
 
         client.Signup(info, { signUpResponse: SignUpResponse ->
@@ -84,7 +83,6 @@ class ApiTest {
             Assertions.assertEquals(fullname, user.fullname)
             Assertions.assertEquals(email, user.email)
             Assertions.assertEquals(mobileNumber, user.mobileNumber)
-            Assertions.assertEquals(isMerchant, user.isMerchant)
         }) { _: TutiResponse?, _: Exception? -> Assertions.fail("sign up failed") }
         val creds = SignInRequest(username, password)
         client.SignIn(creds, { objectReceived: SignInResponse ->
@@ -94,7 +92,6 @@ class ApiTest {
             Assertions.assertEquals(fullname, user.fullname)
             Assertions.assertEquals(email, user.email)
             Assertions.assertEquals(mobileNumber, user.mobileNumber)
-            Assertions.assertEquals(isMerchant, user.isMerchant)
             null
         }
         ) { _: TutiResponse?, _: Exception? -> Assertions.fail("sign in failed!") }

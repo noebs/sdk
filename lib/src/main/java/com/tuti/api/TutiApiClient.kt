@@ -87,6 +87,11 @@ class ChatStableIdentityRequiredException(
     "$operation is disabled: Chat requires tenant-scoped numeric user IDs"
 )
 
+/** Raised when a caller uses a retired signup contract with privileged client-owned fields. */
+class SignupContractUpgradeRequiredException : IllegalStateException(
+    "Legacy signup is disabled: use com.tuti.api.authentication.SignUpRequest"
+)
+
 class TutiApiClient(
     val serverURL: String = "https://api.noebs.sd/",
     val noebsServer: String = "https://api.noebs.sd/",
@@ -1130,18 +1135,9 @@ class TutiApiClient(
         )
     }
 
-
-    @Deprecated(
-        message = "Replace with SignUp with new kotlin classes instead.",
-        replaceWith = ReplaceWith("SignUp")
-    )
-            /**
-             * @param signUpRequest
-             * @param onResponse
-             * @param onError
-             */
+    /** Registers a user with the canonical public signup contract. */
     fun Signup(
-        signUpRequest: SignUpRequest?,
+        signUpRequest: SignUpRequest,
         onResponse: (SignUpResponse) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit
     ) {
@@ -1154,18 +1150,16 @@ class TutiApiClient(
         )
     }
 
+    @Suppress("DEPRECATION", "UNUSED_PARAMETER")
+    @Deprecated(
+        message = "Legacy signup is retired; use com.tuti.api.authentication.SignUpRequest.",
+    )
     fun Signup(
         signUpRequest: SignupRequest,
         onResponse: (SignUpResponse) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit
     ) {
-        sendRequest(
-            RequestMethods.POST,
-            consumerURL + Operations.SIGN_UP,
-            signUpRequest,
-            onResponse,
-            onError
-        )
+        throw SignupContractUpgradeRequiredException()
     }
 
     @Deprecated("Use cards.createEnrollmentIntent and cards.confirmEnrollment after authentication.")

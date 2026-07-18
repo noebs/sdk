@@ -14,6 +14,7 @@ import com.tuti.api.data.OperationIdentity
 import com.tuti.model.Notification
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.SerializationException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -42,10 +43,43 @@ class ContractAlignmentTest {
         assertFalse(absent.features.opaqueBalance)
         assertFalse(absent.features.chat)
         assertFalse(absent.features.notifications)
+        assertEquals(null, absent.railKey)
         assertTrue(enabled.features.opaqueCardManagement)
         assertTrue(enabled.features.opaqueBalance)
         assertTrue(enabled.features.chat)
         assertTrue(enabled.features.notifications)
+    }
+
+    @Test
+    fun appConfig_acceptsOnlyValidatedOptionalRailKey() {
+        val valid = TutiApiClient.Json.decodeFromString<AppConfig>(
+            """{
+                "tenant_id":"tenant_1",
+                "rail_key":{
+                    "algorithm":"rsa_pkcs1_v1_5",
+                    "key_id":"$TEST_EBS_KEY_ID",
+                    "public_key":"$TEST_EBS_PUBLIC_KEY"
+                }
+            }""".trimIndent()
+        )
+
+        assertEquals(TEST_EBS_KEY_ID, valid.railKey?.keyId)
+        assertThrows(SerializationException::class.java) {
+            TutiApiClient.Json.decodeFromString<AppConfig>(
+                """{"rail_key":{"algorithm":"rsa_pkcs1_v1_5","key_id":"$TEST_EBS_KEY_ID"}}"""
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            TutiApiClient.Json.decodeFromString<AppConfig>(
+                """{
+                    "rail_key":{
+                        "algorithm":"rsa_pkcs1_v1_5",
+                        "key_id":"sha256:${"0".repeat(64)}",
+                        "public_key":"$TEST_EBS_PUBLIC_KEY"
+                    }
+                }""".trimIndent()
+            )
+        }
     }
 
     @Test
@@ -56,7 +90,7 @@ class ContractAlignmentTest {
               "result": "ok",
               "pubkey": "pub-key",
               "user": {
-                "ID": 42,
+                "ID": 4294967296,
                 "DeletedAt": null,
                 "mobile": "0912345678",
                 "fullname": "Jane Doe"
@@ -67,7 +101,7 @@ class ContractAlignmentTest {
 
         assertEquals("ok", response.result)
         assertEquals("pub-key", response.publicKey)
-        assertEquals(42, response.user.id)
+        assertEquals(4_294_967_296L, response.user.id)
         assertEquals(null, response.user.deletedAt)
         assertEquals("0912345678", response.user.mobileNumber)
     }
@@ -86,16 +120,20 @@ class ContractAlignmentTest {
     }
 
     @Test
-    fun signUpRequest_serializesCurrentPublicKeyFieldName() {
+    fun signUpRequest_serializesOnlyCanonicalPublicFields() {
         val request = SignUpRequest(
+            mobileNumber = "0912345678",
             password = "Password1!",
             userPubKey = "public-key",
-            mobileNumber = "0912345678",
+            fullname = "Alpha Tester",
         )
 
         val json = TutiApiClient.Json.encodeToString(request)
 
-        assertTrue(json.contains("\"user_pubkey\":\"public-key\""))
+        assertEquals(
+            """{"mobile":"0912345678","password":"Password1!","user_pubkey":"public-key","fullname":"Alpha Tester"}""",
+            json,
+        )
     }
 
     @Test
@@ -254,5 +292,24 @@ class ContractAlignmentTest {
 
         assertEquals(null, notification.uuid)
         assertEquals(null, notification.transactionUuid)
+    }
+
+    @Test
+    fun notificationDecodesWithoutLegacyPaymentRequest() {
+        val notification = TutiApiClient.Json.decodeFromString<Notification>(
+            """{
+              "phone": null,
+              "type": "message",
+              "to": null,
+              "body": "Hello",
+              "date": null,
+              "title": null,
+              "data": null,
+              "is_read": false,
+              "call_to_action": null
+            }""".trimIndent()
+        )
+
+        assertEquals(null, notification.paymentToken)
     }
 }

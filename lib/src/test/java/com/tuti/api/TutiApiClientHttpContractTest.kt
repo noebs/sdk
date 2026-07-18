@@ -3,6 +3,7 @@ package com.tuti.api
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import com.tuti.api.authentication.SignInRequest
+import com.tuti.api.authentication.SignUpRequest
 import com.tuti.api.data.BalanceInquiryOperationRequest
 import com.tuti.api.data.Card
 import com.tuti.api.data.CardEnrollmentIntent
@@ -24,6 +25,7 @@ import com.tuti.api.wallet.v1.WalletPaymentMethodQuery
 import com.tuti.api.ebs.EBSRequest
 import com.tuti.api.ebs.NoebsTransfer
 import com.tuti.model.BillInfo
+import com.tuti.model.SignupRequest as LegacySignupRequest
 import kotlinx.serialization.decodeFromString
 import okhttp3.WebSocketListener
 import okhttp3.logging.HttpLoggingInterceptor
@@ -40,6 +42,62 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
 class TutiApiClientHttpContractTest {
+    @Test
+    fun canonicalSignupSendsOnlyServerApprovedFields() {
+        withServer { serverUrl, capture ->
+            val client = TutiApiClient(serverURL = serverUrl)
+            val callback = CountDownLatch(1)
+            val error = AtomicReference<Throwable?>()
+
+            client.Signup(
+                SignUpRequest(
+                    mobileNumber = "0912345678",
+                    password = "Password1!",
+                    userPubKey = "public-key",
+                    fullname = "Alpha Tester",
+                ),
+                onResponse = { callback.countDown() },
+                onError = { _, exception ->
+                    error.set(exception ?: AssertionError("signup failed"))
+                    callback.countDown()
+                },
+            )
+
+            waitFor(callback)
+            assertNull(error.get())
+            assertEquals("POST", capture.method.get())
+            assertEquals("/consumer/register", capture.path.get())
+            assertEquals(
+                """{"mobile":"0912345678","password":"Password1!","user_pubkey":"public-key","fullname":"Alpha Tester"}""",
+                capture.body.get(),
+            )
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    @Test
+    fun legacySignupContractRequiresUpgradeBeforeHttp() {
+        withServer { serverUrl, capture ->
+            val client = TutiApiClient(serverURL = serverUrl)
+
+            assertThrows(SignupContractUpgradeRequiredException::class.java) {
+                client.Signup(
+                    LegacySignupRequest(
+                        password = "Password1!",
+                        mobile = "0912345678",
+                        fullname = "Alpha Tester",
+                        pubkey = "public-key",
+                    ),
+                    onResponse = {},
+                    onError = { _, _ -> },
+                )
+            }
+
+            assertFalse(capture.requestArrived.await(500, TimeUnit.MILLISECONDS))
+            assertEquals(0, capture.requestCount.get())
+        }
+    }
+
     @Test
     fun remoteCleartextBasesAreRejectedWhileLoopbackHttpAndWebSocketAreAllowed() {
         for (remoteBase in listOf("http://192.0.2.10/", "http://example.com/")) {

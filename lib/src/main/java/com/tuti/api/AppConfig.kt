@@ -1,5 +1,6 @@
 package com.tuti.api
 
+import com.tuti.api.data.CardEnrollmentRailKey
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -10,6 +11,8 @@ data class AppConfig(
     val wallet: AppWalletConfig = AppWalletConfig(),
     val oauth: AppOAuthConfig = AppOAuthConfig(),
     val features: AppFeatureConfig = AppFeatureConfig(),
+    @SerialName("rail_key")
+    val railKey: CardEnrollmentRailKey? = null,
 )
 
 @Serializable
