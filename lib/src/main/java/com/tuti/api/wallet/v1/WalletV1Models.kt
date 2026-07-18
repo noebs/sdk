@@ -1,5 +1,6 @@
 package com.tuti.api.wallet.v1
 
+import com.tuti.api.data.requireCanonicalUuid
 import com.tuti.util.LongAsStringSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -50,7 +51,7 @@ data class EnsureWalletRequest(
 @Serializable
 data class P2PTransferRequest(
     val tenantId: String,
-    val idempotencyKey: String = "",
+    val idempotencyKey: String,
     val currency: String,
     val fromWalletId: String,
     val toWalletId: String,
@@ -66,7 +67,11 @@ data class P2PTransferRequest(
     val userId: Long = 0,
     val walletPin: String = "",
     val twoFaCode: String = "",
-)
+) {
+    init {
+        requireCanonicalUuid(idempotencyKey, "idempotencyKey")
+    }
+}
 
 @Serializable
 data class DepositRequest(
@@ -83,10 +88,14 @@ data class DepositRequest(
     val feeAmount: Long? = null,
     @Serializable(with = LongAsStringSerializer::class)
     val netAmount: Long? = null,
-    val idempotencyKey: String = "",
+    val idempotencyKey: String,
     val metadata: Map<String, JsonElement>? = null,
     val region: String = "",
-)
+) {
+    init {
+        requireCanonicalUuid(idempotencyKey, "idempotencyKey")
+    }
+}
 
 @Serializable
 data class ManualTransferRequest(
@@ -103,7 +112,11 @@ data class ManualTransferRequest(
     val pspProvider: String = "",
     val pspReference: String = "",
     val approvalTimeoutSeconds: Int,
-)
+) {
+    init {
+        requireCanonicalUuid(idempotencyKey, "idempotencyKey")
+    }
+}
 
 @Serializable
 data class WithdrawalRequest(
@@ -126,10 +139,14 @@ data class WithdrawalRequest(
     val holdExpirySeconds: Int = 0,
     val approvalTimeoutSeconds: Int = 0,
     val verificationTimeoutSeconds: Int = 0,
-    val idempotencyKey: String = "",
+    val idempotencyKey: String,
     val metadata: Map<String, JsonElement>? = null,
     val region: String = "",
-)
+) {
+    init {
+        requireCanonicalUuid(idempotencyKey, "idempotencyKey")
+    }
+}
 
 @Serializable
 data class FundingSource(

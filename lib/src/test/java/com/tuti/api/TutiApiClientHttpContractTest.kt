@@ -353,6 +353,7 @@ class TutiApiClientHttpContractTest {
                     ownerId = "42",
                     amount = 100,
                     currency = "SDG",
+                    idempotencyKey = operationUuidForTest,
                     region = "SD",
                 ),
                 onResponse = {

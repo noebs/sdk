@@ -187,12 +187,17 @@ client.wallet.requestDeposit(
         ownerId = "123",
         amount = 5000,
         currency = "SDG",
+        idempotencyKey = persistedOperationUuid,
         region = "SD",
     ),
     onResponse = { run -> println(run.workflowId) },
     onError = { status, ex -> println(status?.message ?: ex?.message) },
 )
 ```
+
+`idempotencyKey` is a required canonical lowercase UUID for every wallet P2P, deposit,
+withdrawal, and manual-transfer request. Create it once, persist it before the first attempt, and
+reuse it unchanged after timeouts or process recreation.
 
 # Chat WebSocket (Authorization required)
 

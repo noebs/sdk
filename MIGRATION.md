@@ -45,6 +45,12 @@ This SDK has been modernized and contains breaking changes. Highlights below are
   HTTP. `EBSRequest()` is now non-financial and has no implicit UUID; UUID-bound IPIN construction
   requires an explicit operation UUID and EBS public key.
 
+## Wallet Idempotency Keys
+
+- `P2PTransferRequest`, `DepositRequest`, `WithdrawalRequest`, and `ManualTransferRequest` now
+  require an explicit canonical lowercase UUID in `idempotencyKey`; the empty defaults were
+  removed. Persist and reuse that UUID for an exact retry.
+
 ## Crypto/Base64
 
 - IPIN encryption code no longer depends on jersey Base64 or commons-codec.
