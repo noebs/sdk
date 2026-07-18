@@ -1,27 +1,28 @@
 package com.tuti.api.ebs
 
 
+import com.tuti.api.data.OpaqueCardOperationRequiredException
+import com.tuti.api.data.requireCanonicalUuid
+import com.tuti.util.IPINBlockGenerator
 import kotlinx.serialization.SerialName
-import java.security.KeyFactory
-import java.security.spec.InvalidKeySpecException
-import java.security.spec.X509EncodedKeySpec
 import java.text.DateFormat
 import java.text.SimpleDateFormat
 import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
-import java.util.*
-import javax.crypto.Cipher
-import okio.ByteString
-import okio.ByteString.Companion.decodeBase64
-import okio.ByteString.Companion.toByteString
+import java.util.Date
+import java.util.Locale
 
 
 @kotlinx.serialization.Serializable
-class EBSRequest {
-    companion object {
-        private const val DEFAULT_PUBLIC_KEY =
-            "MFwwDQYJKoZIhvcNAQEBBQADSwAwSAJBANx4gKYSMv3CrWWsxdPfxDxFvl+Is/0kc1dvMI1yNWDXI3AgdI4127KMUOv7gmwZ6SnRsHX/KAM0IPRe0+Sa0vMCAwEAAQ=="
+class EBSRequest(
+    @SerialName("UUID")
+    val uuid: String = "",
+) {
+    init {
+        if (uuid.isNotEmpty()) {
+            requireCanonicalUuid(uuid, "UUID")
+        }
     }
 
     @SerialName("applicationId")
@@ -30,22 +31,30 @@ class EBSRequest {
     @SerialName("tranDateTime")
     val tranDateTime: String = getCurrentDate()
 
-    @SerialName("UUID")
-    val uuid: String = generateUUID()
-
-
     var pubKey: String? = null
 
     // mobile used in otp with payment card verification step
     var mobile: String? = null
 
-    constructor(pubKey: String?, ipin: String?) {
+    /**
+     * Builds a UUID-bound transient rail proof. The caller owns [operationUuid] and must persist it
+     * with its request claim before the first attempt.
+     */
+    constructor(operationUuid: String, pubKey: String?, ipin: String?) : this(operationUuid) {
         this.pubKey = pubKey
         IPIN = ipin
         setEncryptedIPIN(pubKey)
     }
 
-    constructor() {
+    /**
+     * Kept so old applications still compile, but intentionally cannot create a financial request
+     * with a fresh UUID. Use the operation-identity constructor above.
+     */
+    @Deprecated(
+        message = "Financial EBS requests require a caller-persisted OperationIdentity and explicit operation UUID.",
+    )
+    constructor(pubKey: String?, ipin: String?) : this() {
+        throw OpaqueCardOperationRequiredException("EBSRequest(pubKey, ipin)")
     }
 
     var authenticationType: String? = null
@@ -118,41 +127,15 @@ class EBSRequest {
         return dateFormat.format(date)
     }
 
-    private fun generateUUID(): String {
-        val uuid = UUID.randomUUID()
-        return uuid.toString()
-    }
-
     fun setEncryptedIPIN(pubKey: String?) {
-        IPIN = getIPINBlock(IPIN, pubKey, uuid)
-    }
-
-    private fun getIPINBlock(ipin: String?,
-                             publicKey: String?, uuid: String): String? {
-        // clear ipin = uuid +  IPIN
-        if (ipin == null) return null
-        val clearIpin = uuid + ipin
-
-        val publicKeyBase64 = publicKey?.takeIf { it.isNotBlank() } ?: DEFAULT_PUBLIC_KEY
-        val keyBytes = publicKeyBase64.decodeBase64()?.toByteArray() ?: return null
-
-        val pubKey = try {
-            KeyFactory.getInstance("RSA").generatePublic(X509EncodedKeySpec(keyBytes))
-        } catch (e: InvalidKeySpecException) {
-            e.printStackTrace()
-            return null
+        check(uuid.isNotEmpty()) {
+            "a caller-persisted operation UUID is required before creating an IPIN block"
         }
-
-        return try {
-            // construct Cipher with encryption algrithm:RSA, cipher mode:ECB and padding:PKCS1Padding
-            val cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding")
-            cipher.init(Cipher.ENCRYPT_MODE, pubKey)
-            // calculate ipin, encryption then encoding to base64
-            cipher.doFinal(clearIpin.toByteArray(Charsets.UTF_8)).toByteString().base64()
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
-        }
+        IPIN = IPINBlockGenerator.getIPINBlock(
+            ipin = requireNotNull(IPIN) { "IPIN is required" },
+            publicKey = pubKey,
+            uuid = uuid,
+        )
     }
 }
 

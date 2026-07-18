@@ -43,7 +43,6 @@ import com.tuti.api.wallet.v1.WithdrawalRequest
 import com.tuti.api.wallet.v1.WorkflowRun
 import com.tuti.model.*
 import com.tuti.util.DateSerializer
-import com.tuti.util.IPINBlockGenerator
 import kotlinx.serialization.*
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.modules.SerializersModule
@@ -76,7 +75,7 @@ class TutiApiClient(
         private set
     var ipinUsername: String = ""
     var ipinPassword: String = ""
-    var ebsKey: String = "MFwwDQYJKoZIhvcNAQEBBQADSwAwSAJBANx4gKYSMv3CrWWsxdPfxDxFvl+Is/0kc1dvMI1yNWDXI3AgdI4127KMUOv7gmwZ6SnRsHX/KAM0IPRe0+Sa0vMCAwEAAQ=="
+    var ebsKey: String = ""
 
     val entertainmentServer = "https://plus.2t.sd/"
 
@@ -146,16 +145,12 @@ class TutiApiClient(
         return currency
     }
 
-    private fun fillRequestFields(card: Card, ipin: String, amount: Float): EBSRequest {
-        val request = EBSRequest()
-        val encryptedIPIN: String = IPINBlockGenerator.getIPINBlock(ipin, ebsKey, request.uuid)
-        request.tranAmount = amount
-        request.tranCurrencyCode = requireConfiguredWalletCurrency()
-        request.pan = card.PAN
-        request.expDate = card.expiryDate
-        request.IPIN = encryptedIPIN
-        return request
-    }
+    private fun legacyFinancialOperationUnavailable(operation: String): Nothing =
+        throw OpaqueCardOperationRequiredException(operation)
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun fillRequestFields(card: Card, ipin: String, amount: Float): EBSRequest =
+        legacyFinancialOperationUnavailable("legacy card-funded helper")
 
     private fun normalizeLegacyAuthRequest(
         credentials: SignInRequest?,
@@ -282,20 +277,7 @@ class TutiApiClient(
         onResponse: (SendTransferResponse) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit
     ) {
-        val request = SendTransferRequest(
-            card = card,
-            ipin = ipin,
-            ebsKey = ebsKey,
-            ProductID = productID,
-            Amount = amount
-        )
-        sendRequest(
-            RequestMethods.POST,
-            entertainmentServer + Operations.ENTERTAINMENT_SEND_TRANSFER,
-            requestToBeSent = request,
-            onResponse = onResponse,
-            onError = onError,
-        )
+        legacyFinancialOperationUnavailable("EntertainmentSendTranser")
     }
 
     fun TestDeploy(): String {
@@ -1103,13 +1085,7 @@ class TutiApiClient(
         onResponse: (EBSResponse) -> Unit,
         onError: (EBSResponse?, Exception?) -> Unit
     ) {
-        sendRequest(
-            RequestMethods.POST,
-            URL,
-            ebsRequest,
-            onResponse,
-            onError,
-        )
+        legacyFinancialOperationUnavailable("sendEBSRequest")
     }
 
     fun getCards(
@@ -1262,21 +1238,7 @@ class TutiApiClient(
         onResponse: (TutiResponse) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit
     ) {
-        val request = EBSRequest()
-        val encryptedIPIN: String = IPINBlockGenerator.getIPINBlock(ipin, ebsKey, request.uuid)
-        request.pan = card.PAN
-        request.expDate = card.expiryDate
-        request.IPIN = encryptedIPIN
-        //println(request.tranDateTime)
-        //println(request.applicationId)
-
-        sendRequest(
-            RequestMethods.POST,
-            consumerURL + Operations.GET_BALANCE,
-            request,
-            onResponse,
-            onError,
-        )
+        legacyFinancialOperationUnavailable("balanceInquiry")
     }
 
 
@@ -1321,13 +1283,7 @@ class TutiApiClient(
         onResponse: (TutiResponse) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit,
     ): Call {
-        return sendRequest(
-            RequestMethods.POST,
-            consumerURL + Operations.BILL_INQUIRY,
-            request,
-            onResponse,
-            onError,
-        )
+        legacyFinancialOperationUnavailable("billInquiry(EBSRequest)")
     }
 
     fun cardTransfer(
@@ -1649,12 +1605,7 @@ class TutiApiClient(
         onResponse: (TutiResponse) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit
     ) {
-        sendRequest(
-            RequestMethods.POST,
-            noebsBaseURL + Operations.NOEBS_CARD_TRANSFER,
-            request,
-            onResponse, onError
-        )
+        legacyFinancialOperationUnavailable("noebsTransfer")
     }
 
 
@@ -1668,14 +1619,7 @@ class TutiApiClient(
         onResponse: (PaymentToken) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit
     ) {
-        sendRequest(
-            RequestMethods.POST,
-            consumerURL + Operations.QuickPayment,
-            request,
-            onResponse,
-            onError, null,
-            "uuid", uuid
-        )
+        legacyFinancialOperationUnavailable("quickPayment(EBSRequest)")
     }
 
     fun payByUUID(
@@ -1795,26 +1739,7 @@ class TutiApiClient(
         onResponse: (TutiResponse) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit
     ) {
-
-        val request = EBSRequest()
-
-        val oldIPINEncrypted: String =
-            IPINBlockGenerator.getIPINBlock(oldIPIN, ebsKey, request.uuid)
-        val newIPINEncrypted: String =
-            IPINBlockGenerator.getIPINBlock(newIPIN, ebsKey, request.uuid)
-
-        request.expDate = card.expiryDate
-        request.IPIN = (oldIPINEncrypted)
-        request.newIPIN = (newIPINEncrypted)
-        request.pan = card.PAN
-
-        sendRequest(
-            RequestMethods.POST,
-            consumerURL + Operations.CHANGE_IPIN,
-            request,
-            onResponse,
-            onError
-        )
+        legacyFinancialOperationUnavailable("changeIPIN")
     }
 
     fun getTransctionByUUID(

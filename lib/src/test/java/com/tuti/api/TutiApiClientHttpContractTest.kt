@@ -4,10 +4,12 @@ import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import com.tuti.api.authentication.SignInRequest
 import com.tuti.api.data.Card
+import com.tuti.api.data.OpaqueCardOperationRequiredException
 import com.tuti.api.wallet.v1.CreateWalletRequest
 import com.tuti.api.wallet.v1.DepositRequest
 import com.tuti.api.wallet.v1.WalletPaymentMethodQuery
 import com.tuti.api.ebs.EBSRequest
+import com.tuti.api.ebs.NoebsTransfer
 import com.tuti.model.BillInfo
 import kotlinx.serialization.decodeFromString
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -23,11 +25,11 @@ import java.util.concurrent.atomic.AtomicReference
 
 class TutiApiClientHttpContractTest {
     @Test
-    fun cardHelpersRequireLoadedWalletCurrency() {
+    fun legacyCardHelpersFailClosedBeforeConfigurationOrNetwork() {
         val client = TutiApiClient(serverURL = "http://127.0.0.1:1/")
         val card = Card(PAN = "6392561234567890", expiryDate = "2512")
 
-        val err = assertThrows(IllegalStateException::class.java) {
+        val err = assertThrows(OpaqueCardOperationRequiredException::class.java) {
             client.cardTransfer(
                 card = card,
                 ipin = "1234",
@@ -38,8 +40,41 @@ class TutiApiClientHttpContractTest {
             )
         }
 
-        assertTrue(err.message.orEmpty().contains("wallet default currency is required"))
+        assertTrue(err.message.orEmpty().contains("opaque card authorization"))
     }
+
+    @Test
+    fun everyLegacyFinancialEntryPointFailsBeforeHttp() {
+        withServer { serverUrl, capture ->
+            val client = TutiApiClient(serverURL = serverUrl, noebsServer = serverUrl)
+            val card = Card(PAN = "6392561234567890", expiryDate = "2512")
+
+            assertThrows(OpaqueCardOperationRequiredException::class.java) {
+                client.balanceInquiry(card, "1234", {}, { _, _ -> })
+            }
+            assertThrows(OpaqueCardOperationRequiredException::class.java) {
+                client.quickPayment(EBSRequest(), onResponse = {}, onError = { _, _ -> })
+            }
+            assertThrows(OpaqueCardOperationRequiredException::class.java) {
+                client.sendEBSRequest(serverUrl, EBSRequest(), {}, { _, _ -> })
+            }
+            assertThrows(OpaqueCardOperationRequiredException::class.java) {
+                client.EntertainmentSendTranser(card, "1234", "product", 10f, {}, { _, _ -> })
+            }
+            assertThrows(OpaqueCardOperationRequiredException::class.java) {
+                client.noebsTransfer(
+                    NoebsTransfer(null, null, null, null, operationUuidForTest, null),
+                    {},
+                    { _, _ -> },
+                )
+            }
+
+            assertEquals("", capture.path.get())
+            assertEquals("", capture.body.get())
+        }
+    }
+
+    private val operationUuidForTest = "123e4567-e89b-12d3-a456-426614174001"
 
     @Test
     fun legacySignInOverload_sendsMobileField() {
@@ -71,7 +106,7 @@ class TutiApiClientHttpContractTest {
     }
 
     @Test
-    fun billsHelper_and_directBillInquiry_hitDistinctRoutes() {
+    fun billsHelperRemainsAnInquiryWhileDirectPanInquiryFailsClosed() {
         withServer { serverUrl, capture ->
             val client = TutiApiClient(serverURL = serverUrl)
             val error = AtomicReference<Throwable?>(null)
@@ -89,7 +124,6 @@ class TutiApiClientHttpContractTest {
             assertNull(error.get())
             assertEquals("/consumer/bills", capture.path.get())
 
-            val directLatch = CountDownLatch(1)
             val request = EBSRequest().apply {
                 pan = "6392561234567890"
                 expDate = "2512"
@@ -97,17 +131,14 @@ class TutiApiClientHttpContractTest {
                 payeeId = "0010010002"
                 paymentInfo = "MPHONE=249912345678"
             }
-            client.billInquiry(
-                request,
-                onResponse = { directLatch.countDown() },
-                onError = { _, ex ->
-                    error.set(AssertionError("billInquiry failed", ex))
-                    directLatch.countDown()
-                },
-            )
-            waitFor(directLatch)
-            assertNull(error.get())
-            assertEquals("/consumer/bill_inquiry", capture.path.get())
+            assertThrows(OpaqueCardOperationRequiredException::class.java) {
+                client.billInquiry(
+                    request,
+                    onResponse = {},
+                    onError = { _, _ -> },
+                )
+            }
+            assertEquals("/consumer/bills", capture.path.get())
         }
     }
 
@@ -191,23 +222,19 @@ class TutiApiClientHttpContractTest {
             assertTrue(capture.query.get().contains("tenant_id=tenant_1"))
             assertTrue(capture.query.get().contains("currency=SDG"))
 
+            val pathBeforeLegacyCall = capture.path.get()
             val card = Card(PAN = "6392561234567890", expiryDate = "2512")
-            val cardTransferLatch = CountDownLatch(1)
-            client.cardTransfer(
-                card = card,
-                ipin = "1234",
-                receiverCard = card,
-                amount = 10f,
-                onResponse = { cardTransferLatch.countDown() },
-                onError = { _, ex ->
-                    error.set(AssertionError("cardTransfer failed", ex))
-                    cardTransferLatch.countDown()
-                },
-            )
-            waitFor(cardTransferLatch)
-            assertNull(error.get())
-            assertEquals("/consumer/p2p", capture.path.get())
-            assertTrue(capture.body.get().contains("\"tranCurrencyCode\":\"SDG\""))
+            assertThrows(OpaqueCardOperationRequiredException::class.java) {
+                client.cardTransfer(
+                    card = card,
+                    ipin = "1234",
+                    receiverCard = card,
+                    amount = 10f,
+                    onResponse = {},
+                    onError = { _, _ -> },
+                )
+            }
+            assertEquals(pathBeforeLegacyCall, capture.path.get())
         }
     }
 

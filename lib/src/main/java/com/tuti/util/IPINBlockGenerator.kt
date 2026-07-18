@@ -1,5 +1,6 @@
 package com.tuti.util
 
+import com.tuti.api.data.requireCanonicalUuid
 import okio.ByteString
 import okio.ByteString.Companion.decodeBase64
 import okio.ByteString.Companion.toByteString
@@ -8,18 +9,19 @@ import java.security.spec.X509EncodedKeySpec
 import javax.crypto.Cipher
 
 object IPINBlockGenerator {
-    private const val DEFAULT_PUBLIC_KEY =
-        "MFwwDQYJKoZIhvcNAQEBBQADSwAwSAJBANx4gKYSMv3CrWWsxdPfxDxFvl+Is/0kc1dvMI1yNWDXI3AgdI4127KMUOv7gmwZ6SnRsHX/KAM0IPRe0+Sa0vMCAwEAAQ=="
-
     fun getIPINBlock(
         ipin: String,
         publicKey: String?, uuid: String
     ): String {
+        require(ipin.isNotBlank()) { "IPIN must not be blank" }
+        requireCanonicalUuid(uuid, "uuid")
         // clear ipin = uuid +  IPIN
         val clearIpin = uuid + ipin
 
         // Prepare public key (base64 -> bytes -> RSA key).
-        val publicKeyBase64 = publicKey?.takeIf { it.isNotBlank() } ?: DEFAULT_PUBLIC_KEY
+        val publicKeyBase64 = requireNotNull(publicKey?.takeIf { it.isNotBlank() }) {
+            "an explicit EBS public key is required"
+        }
         val keyBytes =
             publicKeyBase64.decodeBase64()?.toByteArray()
                 ?: throw IllegalArgumentException("Invalid base64 public key")

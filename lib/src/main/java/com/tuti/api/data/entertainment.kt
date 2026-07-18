@@ -4,7 +4,6 @@ import com.tuti.util.IPINBlockGenerator
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
-import java.util.*
 
 sealed class ProviderCode(val code: String) {
     object NetflixUS : ProviderCode("NYUS") // Netflix US
@@ -123,13 +122,18 @@ data class SendTransferRequest(
         val ExpDate: String = card.expiryDate,
         val ApplicationId: String = "TutiPayCon",
         val TutiDiscount: Float = 0f,
-        val BalanceUUID: String = UUID.randomUUID().toString(),
+        val BalanceUUID: String,
         val BalanceIPIN: String = IPINBlockGenerator.getIPINBlock(ipin, ebsKey, BalanceUUID),
         val BalanceTranDateTime: String = "050123141642",
-        val CardTransferUUID: String = UUID.randomUUID().toString(),
+        val CardTransferUUID: String,
         val CardTransferIPIN: String = IPINBlockGenerator.getIPINBlock(ipin, ebsKey, CardTransferUUID),
         val CardTransferTranDateTime: String = "050123141642",
-        )
+        ) {
+        init {
+                requireCanonicalUuid(BalanceUUID, "BalanceUUID")
+                requireCanonicalUuid(CardTransferUUID, "CardTransferUUID")
+        }
+}
 
 @Serializable
 data class SendTransferResponse(
@@ -168,4 +172,3 @@ data class AmountInfo(
         @SerialName("TaxRate")
         val TaxRate: Float,
 )
-

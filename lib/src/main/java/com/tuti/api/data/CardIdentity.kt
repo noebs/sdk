@@ -32,14 +32,15 @@ data class CardSummary(
     val expiryDate: String,
     @SerialName("is_main")
     val isMain: Boolean = false,
-    @SerialName("is_valid")
-    val isValid: Boolean? = null,
-    val status: String? = null,
+    val status: String,
 ) {
     init {
         requireCanonicalCardId(cardId)
         require(MASKED_PAN.matches(maskedPan)) {
             "masked_pan must contain exactly four asterisks followed by the last four digits"
+        }
+        require(status.isNotBlank() && status == status.trim()) {
+            "status must be a normalized non-blank value"
         }
     }
 }
@@ -54,26 +55,11 @@ data class UpdateCardMetadataRequest(
     val name: String,
 )
 
-@Serializable
-data class CardFundedOperationRef(
-    @SerialName("card_id")
-    val cardId: String,
-    val uuid: String,
-    @SerialName("ipin_block")
-    val ipinBlock: String,
-) {
-    init {
-        requireCanonicalCardId(cardId)
-        requireCanonicalUuid(uuid, "uuid")
-        require(ipinBlock.isNotBlank()) { "ipin_block must not be blank" }
-    }
-}
-
 internal fun requireCanonicalCardId(cardId: String) {
     requireCanonicalUuid(cardId, "card_id")
 }
 
-private fun requireCanonicalUuid(value: String, fieldName: String) {
+internal fun requireCanonicalUuid(value: String, fieldName: String) {
     val parsed = runCatching { UUID.fromString(value) }.getOrNull()
     require(parsed != null && parsed.toString() == value) {
         "$fieldName must be a canonical lowercase UUID"

@@ -30,6 +30,21 @@ This SDK has been modernized and contains breaking changes. Highlights below are
 
 - `TutiApiClient()` now defaults to `https://api.noebs.sd/` for both `serverURL` (consumer API) and `noebsServer` (wallet/ws/root routes).
 
+## Durable Card-Funded Operations
+
+- A financial attempt now starts with a caller-created canonical UUID and an `OperationClaim`.
+  Persist the resulting `OperationIdentity` before the first HTTP attempt and reuse both its
+  `uuid` and `requestClaim` after timeouts, retries, and process recreation.
+- Build endpoint bodies with `MobileTransferOperationRequest`, `TokenPaymentOperationRequest`, or
+  `BillPaymentOperationRequest`. Each factory derives the transmitted target and RFC 8785/JCS
+  request claim from the same typed values and rejects a changed retry locally.
+- `request_claim` is a replay-integrity assertion, not authorization. The server normalizes the
+  semantic request, recomputes the claim, and owns replay acceptance.
+- Legacy PAN-funded helpers remain source-compatible but throw
+  `OpaqueCardOperationRequiredException` before generating a UUID, encrypting an IPIN, or sending
+  HTTP. `EBSRequest()` is now non-financial and has no implicit UUID; UUID-bound IPIN construction
+  requires an explicit operation UUID and EBS public key.
+
 ## Crypto/Base64
 
 - IPIN encryption code no longer depends on jersey Base64 or commons-codec.

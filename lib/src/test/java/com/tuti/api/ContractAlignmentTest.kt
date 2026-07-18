@@ -8,6 +8,9 @@ import com.tuti.api.data.CardFundedOperationRef
 import com.tuti.api.data.CardSummary
 import com.tuti.api.data.IsUser
 import com.tuti.api.data.IsUserResponse
+import com.tuti.api.data.OperationClaim
+import com.tuti.api.data.OperationIdentity
+import com.tuti.model.Notification
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -124,13 +127,15 @@ class ContractAlignmentTest {
               "name": "Daily card",
               "masked_pan": "****3456",
               "exp_date": "2712",
-              "is_main": true
+              "is_main": true,
+              "status": "active"
             }
             """.trimIndent()
         )
 
         assertEquals("123e4567-e89b-12d3-a456-426614174000", summary.cardId)
         assertEquals("****3456", summary.maskedPan)
+        assertEquals("active", summary.status)
         assertThrows(IllegalArgumentException::class.java) {
             summary.copy(cardId = "123E4567-E89B-12D3-A456-426614174000")
         }
@@ -146,25 +151,85 @@ class ContractAlignmentTest {
     }
 
     @Test
-    fun fundedOperationSerializesCardIdWithoutPanOrClearIpin() {
-        val request = CardFundedOperationRef(
+    fun fundedOperationSerializesStableIdentityAndOpaqueCardAuthorization() {
+        val claim = OperationClaim.mobileTransfer(
             cardId = "123e4567-e89b-12d3-a456-426614174000",
+            amountMinor = 1_250,
+            currency = "SDG",
+            phone = "0912345678",
+        )
+        val identity = OperationIdentity.create(
             uuid = "123e4567-e89b-12d3-a456-426614174001",
-            ipinBlock = "encrypted-proof",
+            claim = claim,
+        )
+        val request = CardFundedOperationRef.create(
+            identity = identity,
+            claim = claim,
+            ipinBlock = "ZW5jcnlwdGVkLXByb29m",
         )
 
         val json = TutiApiClient.Json.encodeToString(request)
 
+        assertTrue(json.contains("\"uuid\":\"123e4567-e89b-12d3-a456-426614174001\""))
+        assertTrue(json.contains("\"request_claim\":\"v1:"))
+        assertTrue(json.contains("\"card_authorization\":{"))
         assertTrue(json.contains("\"card_id\":\"123e4567-e89b-12d3-a456-426614174000\""))
-        assertTrue(json.contains("\"ipin_block\":\"encrypted-proof\""))
+        assertTrue(json.contains("\"rail_uuid\":\"123e4567-e89b-12d3-a456-426614174001\""))
+        assertTrue(json.contains("\"ipin_block\":\"ZW5jcnlwdGVkLXByb29m\""))
         assertFalse(json.contains("pan", ignoreCase = true))
         assertFalse(json.contains("\"ipin\"", ignoreCase = true))
 
         assertThrows(IllegalArgumentException::class.java) {
-            request.copy(uuid = "rail-request-id")
+            OperationIdentity.create(uuid = "rail-request-id", claim = claim)
         }
-        assertThrows(IllegalArgumentException::class.java) {
-            request.copy(ipinBlock = " ")
-        }
+    }
+
+    @Test
+    fun notificationSeparatesLowercaseEventIdentityFromCanonicalTransactionIdentity() {
+        val notification = TutiApiClient.Json.decodeFromString<Notification>(
+            """
+            {
+              "phone": "0912345678",
+              "type": "EBS",
+              "to": "device",
+              "body": "Transfer complete",
+              "date": 1784419200,
+              "title": "Paid",
+              "data": null,
+              "uuid": "123e4567-e89b-12d3-a456-426614174001:sender",
+              "transaction_uuid": "123e4567-e89b-12d3-a456-426614174001",
+              "is_read": false,
+              "call_to_action": "transaction",
+              "payment_request": null
+            }
+            """.trimIndent()
+        )
+
+        assertEquals("123e4567-e89b-12d3-a456-426614174001:sender", notification.uuid)
+        assertEquals("123e4567-e89b-12d3-a456-426614174001", notification.transactionUuid)
+    }
+
+    @Test
+    fun notificationNeverTreatsLegacyUppercaseEventUuidAsTransactionIdentity() {
+        val notification = TutiApiClient.Json.decodeFromString<Notification>(
+            """
+            {
+              "phone": null,
+              "type": null,
+              "to": null,
+              "body": null,
+              "date": null,
+              "title": null,
+              "data": null,
+              "UUID": "123e4567-e89b-12d3-a456-426614174001",
+              "is_read": null,
+              "call_to_action": null,
+              "payment_request": null
+            }
+            """.trimIndent()
+        )
+
+        assertEquals(null, notification.uuid)
+        assertEquals(null, notification.transactionUuid)
     }
 }

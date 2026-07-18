@@ -2,6 +2,7 @@ package com.tuti.model
 
 import com.tuti.api.data.Card
 import com.tuti.api.data.PaymentToken
+import com.tuti.api.data.requireCanonicalUuid
 import com.tuti.api.ebs.EBSResponse
 import com.tuti.util.GenderSerializer
 import kotlinx.serialization.Contextual
@@ -63,11 +64,16 @@ data class Notification(
         val date: Long?,
         val title: String?,
         val data: EBSResponse?,
-        @SerialName("UUID") val uuid: String?,
+        @SerialName("uuid") val uuid: String? = null,
         @SerialName("is_read") val isRead: Boolean?,
         @SerialName("call_to_action") val callToAction: String?,
         @SerialName("payment_request") val paymentToken: PaymentToken?,
-)
+        @SerialName("transaction_uuid") val transactionUuid: String? = null,
+) {
+        init {
+                transactionUuid?.let { requireCanonicalUuid(it, "transaction_uuid") }
+        }
+}
 
 data class NotificationFilters(
         val mobile: String,
