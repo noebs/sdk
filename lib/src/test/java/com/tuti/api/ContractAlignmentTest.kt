@@ -122,7 +122,7 @@ class ContractAlignmentTest {
             {
               "card_id": "123e4567-e89b-12d3-a456-426614174000",
               "name": "Daily card",
-              "masked_pan": "123456******3456",
+              "masked_pan": "****3456",
               "exp_date": "2712",
               "is_main": true
             }
@@ -130,12 +130,18 @@ class ContractAlignmentTest {
         )
 
         assertEquals("123e4567-e89b-12d3-a456-426614174000", summary.cardId)
-        assertEquals("123456******3456", summary.maskedPan)
+        assertEquals("****3456", summary.maskedPan)
         assertThrows(IllegalArgumentException::class.java) {
             summary.copy(cardId = "123E4567-E89B-12D3-A456-426614174000")
         }
         assertThrows(IllegalArgumentException::class.java) {
             summary.copy(maskedPan = "1234567890123456")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            summary.copy(maskedPan = "123456*****3456")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            summary.copy(maskedPan = "••••3456")
         }
     }
 
@@ -143,7 +149,7 @@ class ContractAlignmentTest {
     fun fundedOperationSerializesCardIdWithoutPanOrClearIpin() {
         val request = CardFundedOperationRef(
             cardId = "123e4567-e89b-12d3-a456-426614174000",
-            uuid = "rail-request-id",
+            uuid = "123e4567-e89b-12d3-a456-426614174001",
             ipinBlock = "encrypted-proof",
         )
 
@@ -153,5 +159,12 @@ class ContractAlignmentTest {
         assertTrue(json.contains("\"ipin_block\":\"encrypted-proof\""))
         assertFalse(json.contains("pan", ignoreCase = true))
         assertFalse(json.contains("\"ipin\"", ignoreCase = true))
+
+        assertThrows(IllegalArgumentException::class.java) {
+            request.copy(uuid = "rail-request-id")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            request.copy(ipinBlock = " ")
+        }
     }
 }

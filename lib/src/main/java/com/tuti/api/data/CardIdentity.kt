@@ -4,6 +4,8 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import java.util.UUID
 
+private val MASKED_PAN = Regex("^\\*{4}[0-9]{4}$")
+
 /**
  * A card enrollment selector. It is an authenticated resource identifier, not a bearer secret and
  * never a derivative of the PAN.
@@ -36,8 +38,8 @@ data class CardSummary(
 ) {
     init {
         requireCanonicalCardId(cardId)
-        require(maskedPan.any { it == '*' || it == '\u2022' }) {
-            "masked_pan must not contain a full PAN"
+        require(MASKED_PAN.matches(maskedPan)) {
+            "masked_pan must contain exactly four asterisks followed by the last four digits"
         }
     }
 }
@@ -62,12 +64,18 @@ data class CardFundedOperationRef(
 ) {
     init {
         requireCanonicalCardId(cardId)
+        requireCanonicalUuid(uuid, "uuid")
+        require(ipinBlock.isNotBlank()) { "ipin_block must not be blank" }
     }
 }
 
 internal fun requireCanonicalCardId(cardId: String) {
-    val parsed = runCatching { UUID.fromString(cardId) }.getOrNull()
-    require(parsed != null && parsed.toString() == cardId) {
-        "card_id must be a canonical lowercase UUID"
+    requireCanonicalUuid(cardId, "card_id")
+}
+
+private fun requireCanonicalUuid(value: String, fieldName: String) {
+    val parsed = runCatching { UUID.fromString(value) }.getOrNull()
+    require(parsed != null && parsed.toString() == value) {
+        "$fieldName must be a canonical lowercase UUID"
     }
 }
