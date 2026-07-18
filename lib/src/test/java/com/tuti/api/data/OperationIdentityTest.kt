@@ -5,6 +5,7 @@ import com.tuti.api.TEST_EBS_PUBLIC_KEY
 import com.tuti.api.ebs.EBSRequest
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
+import okio.ByteString.Companion.decodeBase64
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -28,6 +29,56 @@ class OperationIdentityTest {
             "v1:707624aff13bcee534e211eb26797f6d2f65966deeb3d560a9abe54aefdaaf8c",
             claim.requestClaim,
         )
+    }
+
+    @Test
+    fun balanceInquiry_matchesTheCrossLanguageClaimAndWireContract() {
+        val balanceCardId = "123e4567-e89b-42d3-a456-426614174000"
+        val identity = OperationIdentity.createBalanceInquiry(operationUuid, balanceCardId)
+        val request = BalanceInquiryOperationRequest.create(
+            identity = identity,
+            cardId = balanceCardId,
+            ipinBlock = "Y2lwaGVydGV4dA==",
+        )
+
+        assertEquals(
+            """{"card_id":"123e4567-e89b-42d3-a456-426614174000","operation":"balance_inquiry","version":1}""",
+            balanceInquiryCanonicalJson(balanceCardId),
+        )
+        assertEquals(
+            "v1:156f27e07145ee6a12bfbd6ce2111f1c8ba5ba8fe0d9f728a1e07de867dcc07a",
+            identity.requestClaim,
+        )
+        assertEquals(
+            """{"uuid":"123e4567-e89b-12d3-a456-426614174001","request_claim":"v1:156f27e07145ee6a12bfbd6ce2111f1c8ba5ba8fe0d9f728a1e07de867dcc07a","card_authorization":{"card_id":"123e4567-e89b-42d3-a456-426614174000","rail_uuid":"123e4567-e89b-12d3-a456-426614174001","ipin_block":"Y2lwaGVydGV4dA=="}}""",
+            TutiApiClient.Json.encodeToString(request),
+        )
+
+        assertThrows(OperationClaimMismatchException::class.java) {
+            BalanceInquiryOperationRequest.create(
+                identity,
+                "123e4567-e89b-42d3-a456-426614174099",
+                "Y2lwaGVydGV4dA==",
+            )
+        }
+
+        val encrypted = BalanceInquiryOperationRequest.create(
+            identity = identity,
+            cardId = balanceCardId,
+            ipin = "1234",
+            publicKey = ebsPublicKey,
+        )
+        assertEquals(256, encrypted.cardAuthorization.ipinBlock.decodeBase64()?.size)
+        assertThrows(IllegalArgumentException::class.java) {
+            BalanceInquiryOperationRequest.create(identity, balanceCardId, "12x4", ebsPublicKey)
+        }
+
+        assertThrows(IllegalArgumentException::class.java) {
+            BalanceAmounts(Double.NaN, 1.0)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            BalanceAmounts(1.0, Double.POSITIVE_INFINITY)
+        }
     }
 
     @Test

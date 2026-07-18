@@ -41,6 +41,10 @@ This SDK has been modernized and contains breaking changes. Highlights below are
   request claim from the same typed values and rejects a changed retry locally.
 - `request_claim` is a replay-integrity assertion, not authorization. The server normalizes the
   semantic request, recomputes the claim, and owns replay acceptance.
+- Balance inquiry is available through `client.cards.balance`. Create and persist its identity with
+  `OperationIdentity.createBalanceInquiry`, then build a transient
+  `BalanceInquiryOperationRequest`; its response contains only typed `available` and `ledger`
+  values. Exact retries reuse the same UUID and claim.
 - Legacy PAN-funded helpers remain source-compatible but throw
   `OpaqueCardOperationRequiredException` before generating a UUID, encrypting an IPIN, or sending
   HTTP. `EBSRequest()` is now non-financial and has no implicit UUID; UUID-bound IPIN construction

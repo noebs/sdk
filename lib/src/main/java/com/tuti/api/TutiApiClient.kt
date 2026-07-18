@@ -1009,6 +1009,25 @@ class TutiApiClient(
             )
         }
 
+        fun balance(
+            request: BalanceInquiryOperationRequest,
+            onResponse: (BalanceInquiryResult) -> Unit,
+            onError: (TutiResponse?, Exception?) -> Unit,
+        ): Call = sendRequest<BalanceInquiryOperationRequest, BalanceInquiryResult, TutiResponse>(
+            method = RequestMethods.POST,
+            URL = consumerURL + "balance",
+            requestToBeSent = request,
+            onResponse = { result ->
+                if (result.uuid == request.uuid) {
+                    onResponse(result)
+                } else {
+                    onError(null, OperationResponseMismatchException(request.uuid, result.uuid))
+                }
+            },
+            onError = onError,
+            sensitiveBody = true,
+        )
+
         fun rename(
             card: CardRef,
             name: String,

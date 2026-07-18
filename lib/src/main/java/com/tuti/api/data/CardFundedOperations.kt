@@ -1,8 +1,11 @@
 package com.tuti.api.data
 
+import com.tuti.util.IPINBlockGenerator
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import okio.ByteString.Companion.decodeBase64
+
+private val FUNDED_IPIN = Regex("^[0-9]{4}$")
 
 /** Transient rail proof. It is bound to the public operation UUID and must never be persisted. */
 @Serializable
@@ -55,6 +58,70 @@ class CardFundedOperationRef private constructor(
                 ),
             )
         }
+    }
+}
+
+/** A balance inquiry whose durable claim is bound only to the selected opaque card. */
+@Serializable
+class BalanceInquiryOperationRequest private constructor(
+    val uuid: String,
+    @SerialName("request_claim")
+    val requestClaim: String,
+    @SerialName("card_authorization")
+    val cardAuthorization: CardAuthorization,
+) {
+    init {
+        require(cardAuthorization.railUuid == uuid) {
+            "card_authorization.rail_uuid must equal uuid"
+        }
+        OperationIdentity(uuid, requestClaim).requireBalanceInquiry(cardAuthorization.cardId)
+    }
+
+    companion object {
+        fun create(
+            identity: OperationIdentity,
+            cardId: String,
+            ipin: String,
+            publicKey: String,
+        ): BalanceInquiryOperationRequest {
+            require(FUNDED_IPIN.matches(ipin)) { "IPIN must contain exactly four digits" }
+            return create(
+                identity = identity,
+                cardId = cardId,
+                ipinBlock = IPINBlockGenerator.getIPINBlock(ipin, publicKey, identity.uuid),
+            )
+        }
+
+        fun create(
+            identity: OperationIdentity,
+            cardId: String,
+            ipinBlock: String,
+        ): BalanceInquiryOperationRequest = BalanceInquiryOperationRequest(
+            uuid = identity.uuid,
+            requestClaim = identity.requireBalanceInquiry(cardId).requestClaim,
+            cardAuthorization = CardAuthorization(cardId, identity.uuid, ipinBlock),
+        )
+    }
+}
+
+@Serializable
+data class BalanceAmounts(
+    val available: Double,
+    val ledger: Double,
+) {
+    init {
+        require(available.isFinite()) { "available balance must be finite" }
+        require(ledger.isFinite()) { "ledger balance must be finite" }
+    }
+}
+
+@Serializable
+data class BalanceInquiryResult(
+    val uuid: String,
+    val balance: BalanceAmounts,
+) {
+    init {
+        requireCanonicalUuid(uuid, "uuid")
     }
 }
 

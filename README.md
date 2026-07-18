@@ -144,6 +144,24 @@ log, place in navigation state, or reuse it as card identity. Rename, retire, an
 accept `CardRef(cardId)` and never accept a PAN selector. Legacy PAN card helpers throw
 `OpaqueCardOperationRequiredException` before network I/O.
 
+The first funded opaque-card operation is balance inquiry. Persist its `OperationIdentity` before
+the first request and reuse it after a timeout; the SDK binds the encrypted IPIN block to that same
+UUID and rejects a retry with another `card_id` locally.
+
+```kotlin
+val identity = OperationIdentity.createBalanceInquiry(operationUuid, card.cardId)
+val request = BalanceInquiryOperationRequest.create(
+    identity = identity,
+    cardId = card.cardId,
+    ipin = ipinEnteredOnScreen,
+    publicKey = verifiedEbsPublicKey,
+)
+client.cards.balance(request, onBalance, onError)
+```
+
+Do not persist the clear IPIN, encrypted block, or complete request. The response exposes only the
+typed `available` and `ledger` amounts; it never exposes arbitrary rail fields.
+
 # Wallet API (v1)
 
 `noebs` exposes wallet APIs under `client.wallet`. Frontend-facing user routes use the authenticated `/wallet/wallets`, `/wallet/methods`, and `/wallet/wallets/{id}/transactions` endpoints. Workflow routes such as deposits, withdrawals, P2P, funding sources, destinations, PIN, and 2FA use the gRPC-gateway `/wallet/*` endpoints.

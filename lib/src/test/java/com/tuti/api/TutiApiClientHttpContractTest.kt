@@ -3,10 +3,12 @@ package com.tuti.api
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import com.tuti.api.authentication.SignInRequest
+import com.tuti.api.data.BalanceInquiryOperationRequest
 import com.tuti.api.data.Card
 import com.tuti.api.data.CardEnrollmentIntent
 import com.tuti.api.data.CardRef
 import com.tuti.api.data.OpaqueCardOperationRequiredException
+import com.tuti.api.data.OperationIdentity
 import com.tuti.api.data.SetMainCardRequest
 import com.tuti.api.data.SignUpCard
 import com.tuti.api.wallet.v1.CreateWalletRequest
@@ -488,6 +490,37 @@ class TutiApiClientHttpContractTest {
             assertNull(error.get())
             assertEquals("DELETE", capture.method.get())
             assertEquals("/consumer/cards/${card.cardId}", capture.path.get())
+
+            val balanceCardId = "123e4567-e89b-42d3-a456-426614174000"
+            val balanceRequest = BalanceInquiryOperationRequest.create(
+                identity = OperationIdentity.createBalanceInquiry(operationUuidForTest, balanceCardId),
+                cardId = balanceCardId,
+                ipinBlock = "Y2lwaGVydGV4dA==",
+            )
+            val balanceLatch = CountDownLatch(1)
+            client.cards.balance(
+                request = balanceRequest,
+                onResponse = {
+                    assertEquals(operationUuidForTest, it.uuid)
+                    assertEquals(1250.75, it.balance.available)
+                    assertEquals(1200.25, it.balance.ledger)
+                    balanceLatch.countDown()
+                },
+                onError = { _, ex ->
+                    error.set(ex ?: AssertionError("balance inquiry failed"))
+                    balanceLatch.countDown()
+                },
+            )
+            waitFor(balanceLatch)
+            assertNull(error.get())
+            assertEquals("POST", capture.method.get())
+            assertEquals("/consumer/balance", capture.path.get())
+            assertEquals(
+                """{"uuid":"123e4567-e89b-12d3-a456-426614174001","request_claim":"v1:156f27e07145ee6a12bfbd6ce2111f1c8ba5ba8fe0d9f728a1e07de867dcc07a","card_authorization":{"card_id":"123e4567-e89b-42d3-a456-426614174000","rail_uuid":"123e4567-e89b-12d3-a456-426614174001","ipin_block":"Y2lwaGVydGV4dA=="}}""",
+                capture.body.get(),
+            )
+            assertFalse(capture.body.get().contains("\"pan\""))
+            assertFalse(capture.body.get().contains("exp_date"))
         }
     }
 
@@ -592,6 +625,8 @@ class TutiApiClientHttpContractTest {
                 """{"card_id":"123e4567-e89b-12d3-a456-426614174020","name":"Daily","masked_pan":"****4242","exp_date":"2912","is_main":true,"status":"active"}"""
             "/consumer/cards" ->
                 """{"cards":[{"card_id":"123e4567-e89b-12d3-a456-426614174020","name":"Daily","masked_pan":"****4242","exp_date":"2912","is_main":true,"status":"active"},{"card_id":"123e4567-e89b-12d3-a456-426614174021","name":"Travel","masked_pan":"****4242","exp_date":"3012","is_main":false,"status":"active"}]}"""
+            "/consumer/balance" ->
+                """{"uuid":"$operationUuidForTest","balance":{"available":1250.75,"ledger":1200.25}}"""
             "/app/config" -> """{"tenant_id":"tenant_1","wallet":{"enabled":true,"default_currency":"SDG","pin_required":true},"oauth":{}}"""
             "/wallet/wallets" -> walletResponse()
             "/wallet/wallets/wallet_1" -> walletResponse()

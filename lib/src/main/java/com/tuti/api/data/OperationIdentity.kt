@@ -123,9 +123,17 @@ data class OperationIdentity(
     }
 
     fun requireClaim(claim: OperationClaim): OperationIdentity {
+        return requireExpectedClaim(claim.requestClaim)
+    }
+
+    fun requireBalanceInquiry(cardId: String): OperationIdentity {
+        return requireExpectedClaim(balanceInquiryRequestClaim(cardId))
+    }
+
+    private fun requireExpectedClaim(expected: String): OperationIdentity {
         if (!MessageDigest.isEqual(
                 requestClaim.toByteArray(StandardCharsets.US_ASCII),
-                claim.requestClaim.toByteArray(StandardCharsets.US_ASCII),
+                expected.toByteArray(StandardCharsets.US_ASCII),
             )
         ) {
             throw OperationClaimMismatchException(uuid)
@@ -136,12 +144,20 @@ data class OperationIdentity(
     companion object {
         fun create(uuid: String, claim: OperationClaim): OperationIdentity =
             OperationIdentity(uuid = uuid, requestClaim = claim.requestClaim)
+
+        fun createBalanceInquiry(uuid: String, cardId: String): OperationIdentity =
+            OperationIdentity(uuid = uuid, requestClaim = balanceInquiryRequestClaim(cardId))
     }
 }
 
 class OperationClaimMismatchException(
     val operationUuid: String,
 ) : IllegalArgumentException("operation claim does not match the persisted operation identity")
+
+class OperationResponseMismatchException(
+    val expectedUuid: String,
+    val actualUuid: String,
+) : IllegalStateException("operation response UUID does not match its request")
 
 /**
  * Raised by source-compatible legacy entry points that cannot safely satisfy the opaque-card and
@@ -246,3 +262,17 @@ private fun requireWellFormedUnicode(value: String, fieldName: String) {
 private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
     .digest(value.toByteArray(StandardCharsets.UTF_8))
     .joinToString(separator = "") { byte -> "%02x".format(Locale.ROOT, byte.toInt() and 0xff) }
+
+internal fun balanceInquiryCanonicalJson(cardId: String): String {
+    requireCanonicalCardId(cardId)
+    return canonicalObject(
+        mapOf(
+            "version" to CanonicalValue.Integer(1),
+            "operation" to CanonicalValue.Text("balance_inquiry"),
+            "card_id" to CanonicalValue.Text(cardId),
+        ),
+    )
+}
+
+internal fun balanceInquiryRequestClaim(cardId: String): String =
+    "v1:${sha256(balanceInquiryCanonicalJson(cardId))}"
