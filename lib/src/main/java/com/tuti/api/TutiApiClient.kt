@@ -48,6 +48,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.modules.SerializersModule
 import okhttp3.Call
 import okhttp3.Callback
+import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Interceptor
 import okhttp3.MediaType
@@ -64,8 +65,27 @@ import java.io.IOException
 import java.util.Date
 import java.util.concurrent.TimeUnit
 
-@PublishedApi
-internal object SensitiveRequestBody
+private object SensitiveRequestBody
+
+private data class TransportOrigin(
+    val scheme: String,
+    val host: String,
+    val port: Int,
+)
+
+/** Raised when a legacy SDK method would require direct transport to an external service. */
+class ExternalServiceRetiredException(
+    val operation: String,
+) : IllegalStateException(
+    "$operation is disabled: direct cross-origin SDK transport is retired"
+)
+
+/** Raised when a legacy Chat method cannot return the server's stable user identity. */
+class ChatStableIdentityRequiredException(
+    val operation: String,
+) : IllegalStateException(
+    "$operation is disabled: Chat requires tenant-scoped numeric user IDs"
+)
 
 class TutiApiClient(
     val serverURL: String = "https://api.noebs.sd/",
@@ -81,10 +101,14 @@ class TutiApiClient(
     var ipinPassword: String = ""
     var ebsKey: String = ""
 
+    @Deprecated("Direct cross-origin entertainment transport is retired.")
     val entertainmentServer = "https://plus.2t.sd/"
 
-    private val consumerURL = normalizeConsumerBase(serverURL)
-    private val noebsBaseURL = ensureTrailingSlash(noebsServer)
+    private val serverBaseURL = validateBaseURL(serverURL, "serverURL")
+    private val noebsBase = validateBaseURL(noebsServer, "noebsServer")
+    private val trustedOrigins = setOf(serverBaseURL.origin(), noebsBase.origin())
+    private val consumerURL = normalizeConsumerBase(serverBaseURL.toString())
+    private val noebsBaseURL = noebsBase.toString()
     private val walletBaseURL = noebsBaseURL + "wallet"
 
     /**
@@ -104,6 +128,62 @@ class TutiApiClient(
         val base = ensureTrailingSlash(url)
         return if (base.contains("/consumer/")) base else base + "consumer/"
     }
+
+    private fun validateBaseURL(value: String, name: String): HttpUrl {
+        val url = ensureTrailingSlash(value).toHttpUrlOrNull()
+            ?: throw IllegalArgumentException("$name must be an absolute HTTP URL")
+        require(url.username.isEmpty() && url.password.isEmpty()) {
+            "$name must not contain credentials"
+        }
+        require(url.query == null && url.fragment == null) {
+            "$name must not contain a query or fragment"
+        }
+        require(url.scheme == "https" || isLoopback(url)) {
+            "$name must use HTTPS outside loopback tests"
+        }
+        return url
+    }
+
+    private fun requireTrustedHttpURL(value: String): HttpUrl {
+        val url = value.toHttpUrlOrNull()
+            ?: throw IllegalArgumentException("request URL must be absolute HTTP(S)")
+        require(url.username.isEmpty() && url.password.isEmpty()) {
+            "request URL must not contain credentials"
+        }
+        require(url.scheme == "https" || isLoopback(url)) {
+            "request URL must use HTTPS outside loopback tests"
+        }
+        require(url.origin() in trustedOrigins) {
+            "request URL must match a configured server origin"
+        }
+        return url
+    }
+
+    private fun requireTrustedWebSocketURL(value: String): String {
+        val scheme = value.substringBefore(':').lowercase()
+        require(scheme == "ws" || scheme == "wss") {
+            "websocket URL must use ws or wss"
+        }
+        val suffix = value.substring(value.indexOf(':'))
+        val httpEquivalent = (if (scheme == "ws") "http" else "https") + suffix
+        val url = httpEquivalent.toHttpUrlOrNull()
+            ?: throw IllegalArgumentException("websocket URL must be absolute")
+        require(url.username.isEmpty() && url.password.isEmpty()) {
+            "websocket URL must not contain credentials"
+        }
+        require(scheme == "wss" || isLoopback(url)) {
+            "websocket URL must use WSS outside loopback tests"
+        }
+        require(url.origin() in trustedOrigins) {
+            "websocket URL must match a configured server origin"
+        }
+        return scheme + suffix
+    }
+
+    private fun HttpUrl.origin() = TransportOrigin(scheme, host, port)
+
+    private fun isLoopback(url: HttpUrl): Boolean =
+        url.host == "localhost" || url.host == "127.0.0.1" || url.host == "::1"
 
     fun start(
         onReady: (AppConfig) -> Unit,
@@ -224,32 +304,21 @@ class TutiApiClient(
         )
     }
 
+    @Deprecated("Direct cross-origin entertainment transport is retired.")
     fun GetAllProviders(
         onResponse: (ProvidersResponse) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit
     ) {
-        sendRequest(
-            RequestMethods.GET,
-            entertainmentServer + Operations.GET_PROVIDERS,
-            "",
-            onResponse,
-            onError
-        )
+        throw ExternalServiceRetiredException("GetAllProviders")
     }
 
+    @Deprecated("Direct cross-origin entertainment transport is retired.")
     fun GetProviderProducts(
         providerCode: String,
         onResponse: (ProductsResponse) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit
     ) {
-        sendRequest(
-            RequestMethods.GET,
-            entertainmentServer + Operations.GET_PROVIDER_PRODUCTS,
-            "",
-            onResponse = onResponse,
-            onError = onError,
-            params = arrayOf("provider", providerCode)
-        )
+        throw ExternalServiceRetiredException("GetProviderProducts")
     }
 
     @Deprecated(
@@ -436,18 +505,13 @@ class TutiApiClient(
         )
     }
 
+    @Deprecated("PAN-selected balance recovery is retired; use opaque account recovery.")
     fun Otp2FA(
         credentials: EBSRequest,
         onResponse: (SignInResponse) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit
     ) {
-        sendRequest(
-            RequestMethods.POST,
-            consumerURL + Operations.OTP_2FA,
-            credentials,
-            onResponse,
-            onError
-        )
+        legacyFinancialOperationUnavailable("Otp2FA")
     }
 
 
@@ -1187,39 +1251,41 @@ class TutiApiClient(
         legacyFinancialOperationUnavailable("getCards")
     }
 
+    @Deprecated("Use cards.createEnrollmentIntent; its response contains the bound rail key.")
     fun getPublicKey(
         ebsRequest: EBSRequest?,
         onResponse: (TutiResponse) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit
     ) {
-        sendRequest(
-            RequestMethods.POST,
-            consumerURL + Operations.PUBLIC_KEY,
-            ebsRequest,
-            onResponse,
-            onError,
-        )
+        legacyFinancialOperationUnavailable("getPublicKey(EBSRequest)")
     }
 
+    @Deprecated("Use cards.createEnrollmentIntent; its response contains the bound rail key.")
     fun getIpinPublicKey(
         ebsRequest: EBSRequest,
         onResponse: (TutiResponse) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit
     ) {
-        sendRequest(
-            RequestMethods.POST,
-            consumerURL + Operations.IPIN_key,
-            ebsRequest,
-            onResponse,
-            onError
-        )
+        legacyFinancialOperationUnavailable("getIpinPublicKey(EBSRequest)")
     }
 
+    @Deprecated("Use syncChatContacts for tenant-scoped numeric user identities.")
     fun syncContacts(
         contacts: List<Contact>,
         onResponse: (contacts: List<Contact>) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit
     ) {
+        throw ChatStableIdentityRequiredException("syncContacts")
+    }
+
+    fun syncChatContacts(
+        contacts: List<ChatContactRequest>,
+        onResponse: (contacts: List<ResolvedChatContact>) -> Unit,
+        onError: (TutiResponse?, Exception?) -> Unit,
+    ) {
+        require(contacts.isNotEmpty() && contacts.size <= 50) {
+            "between 1 and 50 contacts must be resolved at once"
+        }
         sendRequest(
             RequestMethods.POST,
             consumerURL + Operations.SUBMIT_CONTACTS,
@@ -1229,46 +1295,30 @@ class TutiApiClient(
         )
     }
 
+    @Deprecated("The generic beneficiary contract is retired; use a typed recipient reference when available.")
     fun addBeneficiary(
         beneficiary: NoebsBeneficiary,
         onResponse: (TutiResponse?) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit
     ) {
-
-        sendRequest(
-            RequestMethods.POST,
-            consumerURL + Operations.BENEFICIARY,
-            beneficiary,
-            onResponse,
-            onError,
-        )
+        legacyFinancialOperationUnavailable("addBeneficiary(NoebsBeneficiary)")
     }
 
+    @Deprecated("The generic beneficiary contract is retired; use a typed recipient reference when available.")
     fun getBeneficiaries(
         onResponse: (List<NoebsBeneficiary>) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit
     ) {
-        sendRequest(
-            RequestMethods.GET,
-            consumerURL + Operations.BENEFICIARY,
-            "",
-            onResponse,
-            onError,
-        )
+        legacyFinancialOperationUnavailable("getBeneficiaries")
     }
 
+    @Deprecated("The generic beneficiary contract is retired; use a typed recipient reference when available.")
     fun deleteBeneficiary(
         beneficiary: NoebsBeneficiary,
         onResponse: (String) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit
     ) {
-        sendRequest(
-            RequestMethods.DELETE,
-            consumerURL + Operations.BENEFICIARY,
-            beneficiary,
-            onResponse,
-            onError,
-        )
+        legacyFinancialOperationUnavailable("deleteBeneficiary(NoebsBeneficiary)")
     }
 
     @Deprecated("Use cards.createEnrollmentIntent and cards.confirmEnrollment.")
@@ -1313,37 +1363,22 @@ class TutiApiClient(
     }
 
 
-    /**
-     * Calls the legacy `/consumer/bills` helper, where the server injects its configured inquiry PAN/IPIN.
-     */
+    @Deprecated("The configured-PAN bills helper is retired; wait for the typed opaque-card bill contract.")
     fun getBills(
         billInfo: BillInfo,
         onResponse: (TutiResponse) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit,
     ): Call {
-        return sendRequest(
-            RequestMethods.POST,
-            consumerURL + Operations.Get_Bills,
-            billInfo,
-            onResponse,
-            onError,
-        )
+        legacyFinancialOperationUnavailable("getBills")
     }
 
-    /**
-     * Retained for compatibility. This overload maps to `/consumer/bills`.
-     * Use [getBills] for this flow, or [billInquiry] with [EBSRequest] for `/consumer/bill_inquiry`.
-     */
-    @Deprecated(
-        message = "This overload calls /consumer/bills. Use getBills(BillInfo, ...) or billInquiry(EBSRequest, ...).",
-        replaceWith = ReplaceWith("getBills(billInfo, onResponse, onError)")
-    )
+    @Deprecated("The configured-PAN bills helper is retired; wait for the typed opaque-card bill contract.")
     fun billInquiry(
         billInfo: BillInfo,
         onResponse: (TutiResponse) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit,
     ): Call {
-        return getBills(billInfo, onResponse, onError)
+        legacyFinancialOperationUnavailable("billInquiry(BillInfo)")
     }
 
     /**
@@ -1642,32 +1677,22 @@ class TutiApiClient(
         )
     }
 
+    @Deprecated("PAN-backed payment tokens are retired; wait for the typed opaque-card token contract.")
     fun generatePaymentToken(
         request: PaymentToken,
         onResponse: (TutiResponse) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit
     ) {
-        sendRequest(
-            RequestMethods.POST,
-            consumerURL + Operations.GeneratePaymentToken,
-            request,
-            onResponse,
-            onError,
-        )
+        legacyFinancialOperationUnavailable("generatePaymentToken")
     }
 
+    @Deprecated("The recipient-PAN payment request contract is retired.")
     fun sendPaymentRequest(
         paymentRequest: PaymentRequest,
         onResponse: (TutiResponse) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit
     ) {
-        sendRequest(
-            RequestMethods.POST,
-            consumerURL + Operations.PAYMENT_REQUEST,
-            paymentRequest,
-            onResponse,
-            onError,
-        )
+        legacyFinancialOperationUnavailable("sendPaymentRequest")
     }
 
     @Deprecated("Legacy noebs transfer endpoint; not available in the current /consumer API.")
@@ -1712,20 +1737,13 @@ class TutiApiClient(
         )
     }
 
+    @Deprecated("PAN-backed payment tokens are retired; wait for the typed opaque-card token contract.")
     fun getPaymentToken(
         uuid: String,
         onResponse: (PaymentToken) -> Unit,
         onError: (PaymentToken?, Exception?) -> Unit
     ) {
-        sendRequest(
-            RequestMethods.GET,
-            consumerURL + Operations.GetPaymentToken,
-            "",
-            onResponse,
-            onError,
-            null,
-            "uuid", uuid
-        )
+        legacyFinancialOperationUnavailable("getPaymentToken")
     }
 
     /**
@@ -1757,49 +1775,22 @@ class TutiApiClient(
     }
 
 
-    /**
-     * generateIpin the first step into generating a new IPIN
-     */
+    @Deprecated("Standalone PAN-selected IPIN generation is retired; use opaque card enrollment.")
     fun generateIpin(
         data: Ipin,
         onResponse: (TutiResponse) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit
     ) {
-        val request = EBSRequest()
-        request.expDate = data.expDate
-        request.phoneNumber = "249" + data.phone.removePrefix("0")
-        request.pan = data.pan
-        sendRequest(
-            RequestMethods.POST,
-            consumerURL + Operations.START_IPIN,
-            request,
-            onResponse,
-            onError
-        )
+        legacyFinancialOperationUnavailable("generateIpin")
     }
 
-    /**
-     * Second step for ipin generation, user will be prompted to enter the otp
-     * alongside other data for complete ipin generation step to take place
-     */
+    @Deprecated("Standalone PAN-selected IPIN generation is retired; use opaque card enrollment.")
     fun confirmIpinGeneration(
         data: IpinCompletion,
         onResponse: (TutiResponse) -> Unit,
         onError: (TutiResponse?, Exception?) -> Unit
     ) {
-        val request = EBSRequest()
-        request.otherPan = data.pan
-        request.IPIN = (data.ipin)
-        request.otp = (data.otp)
-        request.expDate = data.expDate
-        request.phoneNumber = "249" + data.phone.removePrefix("0")
-        sendRequest(
-            RequestMethods.POST,
-            consumerURL + Operations.CONFIRM_IPIN,
-            request,
-            onResponse,
-            onError
-        )
+        legacyFinancialOperationUnavailable("confirmIpinGeneration")
     }
 
 
@@ -1873,7 +1864,7 @@ class TutiApiClient(
     ) {
         sendRequest(
             RequestMethods.GET,
-            serverURL + Operations.LEDGER_TRANSACTIONS,
+            serverBaseURL.toString() + Operations.LEDGER_TRANSACTIONS,
             "",
             onResponse,
             onError,
@@ -1890,7 +1881,7 @@ class TutiApiClient(
     ) {
         sendRequest(
             RequestMethods.GET,
-            serverURL + Operations.NOEBS_TRANSACTIONS,
+            serverBaseURL.toString() + Operations.NOEBS_TRANSACTIONS,
             "",
             onResponse,
             onError,
@@ -1925,7 +1916,7 @@ class TutiApiClient(
         wsBaseURL: String = noebsBaseURL,
         path: String = "/ws"
     ): WebSocket {
-        val wsURL = buildWsURL(wsBaseURL, path)
+        val wsURL = requireTrustedWebSocketURL(buildWsURL(wsBaseURL, path))
         val requestBuilder = Request.Builder().url(wsURL)
         if (token.isNotBlank()) {
             requestBuilder.header("Authorization", token)
@@ -1937,7 +1928,7 @@ class TutiApiClient(
         return okHttpClient.newWebSocket(requestBuilder.build(), listener)
     }
 
-    inline fun <reified RequestType, reified ResponseType, reified ErrorType> sendRequest(
+    private inline fun <reified RequestType, reified ResponseType, reified ErrorType> sendRequest(
         method: RequestMethods,
         URL: String,
         requestToBeSent: RequestType? = null,
@@ -1951,7 +1942,7 @@ class TutiApiClient(
             "params must be an even number of key/value entries. Got ${params.size}."
         }
 
-        val baseUrl = URL.toHttpUrlOrNull() ?: throw IllegalArgumentException("Invalid URL: $URL")
+        val baseUrl = requireTrustedHttpURL(URL)
         val finalUrl = baseUrl.newBuilder().apply {
             params.toList().chunked(2).forEach { (key, value) ->
                 addQueryParameter(key, value)
@@ -2088,6 +2079,8 @@ class TutiApiClient(
 
         val okHttpClient: OkHttpClient = OkHttpClient.Builder()
             .addInterceptor(safeHttpLoggingInterceptor)
+            .followRedirects(false)
+            .followSslRedirects(false)
             .connectTimeout(60, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)

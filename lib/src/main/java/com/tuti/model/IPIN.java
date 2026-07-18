@@ -1,51 +1,24 @@
 package com.tuti.model;
 
-import java.security.Key;
-import java.security.KeyFactory;
-import java.security.spec.InvalidKeySpecException;
-import java.security.spec.X509EncodedKeySpec;
+import com.tuti.util.IPINBlockGenerator;
 
-import javax.crypto.Cipher;
-
-import okio.ByteString;
-
+/**
+ * @deprecated Use typed opaque-card request factories.
+ */
+@Deprecated
 public class IPIN {
 
-    public static String getIPINBlock(String encryptedIPIN,
+    /**
+     * @deprecated Use the typed opaque-card request factories. Invalid keys and encryption failures
+     * throw; this method never returns the clear IPIN.
+     * @param ipin clear transient IPIN
+     * @param publicKey canonical base64-encoded RSA public key
+     * @param uuid canonical operation UUID
+     * @return a base64-encoded RSA block
+     */
+    @Deprecated
+    public static String getIPINBlock(String ipin,
                                       String publicKey, String uuid) {
-        // clear ipin = uuid +  IPIN
-        String clearIPIN = uuid + encryptedIPIN;
-
-        // prepare public key, get public key from its String representation as
-        // base64
-        byte[] keyRawBytes = ByteString.decodeBase64(publicKey).toByteArray();
-        // generate public key
-        X509EncodedKeySpec encodeKeySpecs = new X509EncodedKeySpec(keyRawBytes);
-        KeyFactory rsaKeyFactory;
-        try {
-            rsaKeyFactory = KeyFactory.getInstance("RSA");
-        } catch (Exception e) {
-            e.printStackTrace();
-            return encryptedIPIN;
-        }
-
-        Key pubKey;
-        try {
-            pubKey = rsaKeyFactory.generatePublic(encodeKeySpecs);
-        } catch (InvalidKeySpecException e) {
-            e.printStackTrace();
-            return encryptedIPIN;
-        }
-
-        try {
-            // construct Cipher with encryption algrithm:RSA, cipher mode:ECB and padding:PKCS1Padding
-            Cipher rsaCipherInstance = Cipher.getInstance("RSA/ECB/PKCS1Padding");
-            rsaCipherInstance.init(Cipher.ENCRYPT_MODE, pubKey);
-            // calculate ipin, encryption then encoding to base64
-            encryptedIPIN = ByteString.of(rsaCipherInstance.doFinal(clearIPIN.getBytes())).base64();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        return encryptedIPIN;
+        return IPINBlockGenerator.INSTANCE.getIPINBlock(ipin, publicKey, uuid);
     }
 }

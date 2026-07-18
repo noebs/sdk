@@ -7,8 +7,15 @@ import com.tuti.api.data.BalanceInquiryOperationRequest
 import com.tuti.api.data.Card
 import com.tuti.api.data.CardEnrollmentIntent
 import com.tuti.api.data.CardRef
+import com.tuti.api.data.ChatContactRequest
+import com.tuti.api.data.Contact
+import com.tuti.api.data.Ipin
+import com.tuti.api.data.IpinCompletion
+import com.tuti.api.data.NoebsBeneficiary
 import com.tuti.api.data.OpaqueCardOperationRequiredException
 import com.tuti.api.data.OperationIdentity
+import com.tuti.api.data.PaymentRequest
+import com.tuti.api.data.PaymentToken
 import com.tuti.api.data.SetMainCardRequest
 import com.tuti.api.data.SignUpCard
 import com.tuti.api.wallet.v1.CreateWalletRequest
@@ -18,6 +25,7 @@ import com.tuti.api.ebs.EBSRequest
 import com.tuti.api.ebs.NoebsTransfer
 import com.tuti.model.BillInfo
 import kotlinx.serialization.decodeFromString
+import okhttp3.WebSocketListener
 import okhttp3.logging.HttpLoggingInterceptor
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -28,9 +36,172 @@ import org.junit.jupiter.api.Test
 import java.net.InetSocketAddress
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
 class TutiApiClientHttpContractTest {
+    @Test
+    fun remoteCleartextBasesAreRejectedWhileLoopbackHttpAndWebSocketAreAllowed() {
+        for (remoteBase in listOf("http://192.0.2.10/", "http://example.com/")) {
+            val serverError = assertThrows(IllegalArgumentException::class.java) {
+                TutiApiClient(serverURL = remoteBase, noebsServer = "https://api.noebs.sd/")
+            }
+            assertTrue(serverError.message.orEmpty().contains("HTTPS"))
+            val noebsError = assertThrows(IllegalArgumentException::class.java) {
+                TutiApiClient(serverURL = "https://api.noebs.sd/", noebsServer = remoteBase)
+            }
+            assertTrue(noebsError.message.orEmpty().contains("HTTPS"))
+        }
+        for (loopbackBase in listOf("http://localhost:1/", "http://127.0.0.1:1/", "http://[::1]:1/")) {
+            TutiApiClient(serverURL = loopbackBase, noebsServer = loopbackBase)
+        }
+
+        withServer { serverUrl, capture ->
+            val client = TutiApiClient(serverURL = serverUrl, noebsServer = serverUrl)
+            val socket = client.openChatSocket(object : WebSocketListener() {})
+
+            assertTrue(capture.requestArrived.await(5, TimeUnit.SECONDS))
+            assertEquals("/ws", capture.path.get())
+            socket.cancel()
+        }
+    }
+
+    @Test
+    fun retiredExternalHttpAndCrossOriginWebSocketTargetsAreRejectedBeforeNetwork() {
+        withServer { configuredUrl, configuredCapture ->
+            withServer { otherUrl, otherCapture ->
+                val client = TutiApiClient(serverURL = configuredUrl, noebsServer = configuredUrl)
+
+                val httpError = assertThrows(ExternalServiceRetiredException::class.java) {
+                    client.GetAllProviders({}, { _, _ -> })
+                }
+                assertEquals("GetAllProviders", httpError.operation)
+                assertThrows(ExternalServiceRetiredException::class.java) {
+                    client.GetProviderProducts("must-not-leave-process", {}, { _, _ -> })
+                }
+
+                val socketError = assertThrows(IllegalArgumentException::class.java) {
+                    client.openChatSocket(
+                        listener = object : WebSocketListener() {},
+                        token = "must-not-leave-process",
+                        wsBaseURL = otherUrl,
+                    )
+                }
+                assertTrue(socketError.message.orEmpty().contains("configured server origin"))
+
+                val cleartextError = assertThrows(IllegalArgumentException::class.java) {
+                    client.openChatSocket(
+                        listener = object : WebSocketListener() {},
+                        token = "must-not-leave-process",
+                        wsBaseURL = "http://192.0.2.10/",
+                    )
+                }
+                assertTrue(cleartextError.message.orEmpty().contains("WSS"))
+
+                assertFalse(configuredCapture.requestArrived.await(500, TimeUnit.MILLISECONDS))
+                assertFalse(otherCapture.requestArrived.await(500, TimeUnit.MILLISECONDS))
+                assertEquals(0, configuredCapture.requestCount.get())
+                assertEquals(0, otherCapture.requestCount.get())
+            }
+        }
+    }
+
+    @Test
+    fun redirectsCannotMoveRequestsToAnotherOrigin() {
+        withServer { targetUrl, targetCapture ->
+            withServer(
+                requestHandler = { exchange, sourceCapture ->
+                    captureRequest(exchange, sourceCapture)
+                    exchange.responseHeaders.add("Location", targetUrl + "consumer/transactions")
+                    exchange.sendResponseHeaders(307, -1)
+                    exchange.close()
+                },
+            ) { sourceUrl, sourceCapture ->
+                val client = TutiApiClient(serverURL = sourceUrl, noebsServer = sourceUrl)
+                val callback = CountDownLatch(1)
+
+                client.getTransactions(
+                    onResponse = { callback.countDown() },
+                    onError = { _, _ -> callback.countDown() },
+                )
+
+                waitFor(callback)
+                assertEquals(1, sourceCapture.requestCount.get())
+                assertFalse(targetCapture.requestArrived.await(500, TimeUnit.MILLISECONDS))
+                assertEquals(0, targetCapture.requestCount.get())
+            }
+        }
+    }
+
+    @Test
+    fun chatContactResolutionUsesStrictRequestAndDecodesNumericIdentity() {
+        withServer { serverUrl, capture ->
+            val client = TutiApiClient(serverURL = serverUrl, noebsServer = serverUrl)
+            val callback = CountDownLatch(1)
+            val result = AtomicReference<com.tuti.api.data.ResolvedChatContact?>()
+            val error = AtomicReference<Throwable?>()
+
+            client.syncChatContacts(
+                contacts = listOf(ChatContactRequest(name = "Alpha Tester", mobile = "0912345678")),
+                onResponse = {
+                    result.set(it.single())
+                    callback.countDown()
+                },
+                onError = { _, exception ->
+                    error.set(exception ?: AssertionError("contact resolution failed"))
+                    callback.countDown()
+                },
+            )
+
+            waitFor(callback)
+            assertNull(error.get())
+            assertEquals("POST", capture.method.get())
+            assertEquals("/consumer/submit_contacts", capture.path.get())
+            assertEquals("[{\"name\":\"Alpha Tester\",\"mobile\":\"0912345678\"}]", capture.body.get())
+            assertFalse(capture.body.get().contains("user_id"))
+            assertEquals(42L, result.get()?.userId)
+            assertEquals("Alpha Tester", result.get()?.name)
+            assertEquals("0912345678", result.get()?.mobile)
+        }
+    }
+
+    @Test
+    fun chatContactResolutionRejectsInvalidBatchSizeBeforeHttp() {
+        withServer { serverUrl, capture ->
+            val client = TutiApiClient(serverURL = serverUrl, noebsServer = serverUrl)
+            val oversized = List(51) { index ->
+                ChatContactRequest(name = "Contact $index", mobile = "09${index.toString().padStart(8, '0')}")
+            }
+
+            for (contacts in listOf(emptyList(), oversized)) {
+                assertThrows(IllegalArgumentException::class.java) {
+                    client.syncChatContacts(contacts, {}, { _, _ -> })
+                }
+            }
+            assertFalse(capture.requestArrived.await(500, TimeUnit.MILLISECONDS))
+            assertEquals(0, capture.requestCount.get())
+        }
+    }
+
+    @Test
+    fun legacyMobileOnlyContactSyncRequiresStableIdentityBeforeHttp() {
+        withServer { serverUrl, capture ->
+            val client = TutiApiClient(serverURL = serverUrl, noebsServer = serverUrl)
+
+            val error = assertThrows(ChatStableIdentityRequiredException::class.java) {
+                client.syncContacts(
+                    contacts = listOf(Contact(name = "PAN sentinel", mobile = "0912345678")),
+                    onResponse = {},
+                    onError = { _, _ -> },
+                )
+            }
+
+            assertEquals("syncContacts", error.operation)
+            assertFalse(capture.requestArrived.await(500, TimeUnit.MILLISECONDS))
+            assertEquals(0, capture.requestCount.get())
+        }
+    }
+
     @Test
     fun legacyCardHelpersFailClosedBeforeConfigurationOrNetwork() {
         val client = TutiApiClient(serverURL = "http://127.0.0.1:1/")
@@ -81,6 +252,82 @@ class TutiApiClientHttpContractTest {
         }
     }
 
+    @Test
+    fun retiredSensitiveContractsRejectPanPinAndBeneficiaryDataBeforeHttp() {
+        withServer { serverUrl, capture ->
+            val client = TutiApiClient(serverURL = serverUrl, noebsServer = serverUrl)
+            val panSentinel = "6392569999994242"
+            val ipinSentinel = "8472"
+            val otpSentinel = "1937"
+            val legacyRequest = EBSRequest().apply {
+                pan = panSentinel
+                otherPan = panSentinel
+                IPIN = ipinSentinel
+                newIPIN = ipinSentinel
+                otp = otpSentinel
+            }
+            val beneficiary = NoebsBeneficiary(
+                data = panSentinel,
+                bill_type = "card",
+                name = "must-not-leave-process",
+            )
+            val ipinStart = Ipin(
+                pan = panSentinel,
+                expDate = "2912",
+                phone = "0912345678",
+            )
+            val ipinCompletion = IpinCompletion(
+                pan = panSentinel,
+                expDate = "2912",
+                phone = "0912345678",
+                otp = otpSentinel,
+                uuid = operationUuidForTest,
+                ipin = ipinSentinel,
+            )
+            val error: (com.tuti.api.data.TutiResponse?, Exception?) -> Unit = { _, _ -> }
+
+            val retiredCalls = listOf<() -> Unit>(
+                { client.Otp2FA(legacyRequest, {}, error) },
+                { client.getPublicKey(legacyRequest, {}, error) },
+                { client.getIpinPublicKey(legacyRequest, {}, error) },
+                { client.addBeneficiary(beneficiary, {}, error) },
+                { client.getBeneficiaries({}, error) },
+                { client.deleteBeneficiary(beneficiary, {}, error) },
+                { client.getBills(BillInfo(phone = "0912345678"), {}, error) },
+                { client.billInquiry(BillInfo(phone = "0912345678"), {}, error) },
+                {
+                    client.generatePaymentToken(
+                        PaymentToken(cardTobePaid = panSentinel),
+                        {},
+                        error,
+                    )
+                },
+                {
+                    client.sendPaymentRequest(
+                        PaymentRequest(mobile = "0912345678", toCard = panSentinel, amount = 1),
+                        {},
+                        error,
+                    )
+                },
+                { client.getPaymentToken(operationUuidForTest, {}, { _, _ -> }) },
+                { client.generateIpin(ipinStart, {}, error) },
+                { client.confirmIpinGeneration(ipinCompletion, {}, error) },
+            )
+
+            retiredCalls.forEach { call ->
+                assertThrows(OpaqueCardOperationRequiredException::class.java) { call() }
+            }
+
+            assertFalse(capture.requestArrived.await(500, TimeUnit.MILLISECONDS))
+            assertEquals(0, capture.requestCount.get())
+            assertEquals("", capture.path.get())
+            assertEquals("", capture.body.get())
+            assertFalse(capture.body.get().contains(panSentinel))
+            assertFalse(capture.body.get().contains(ipinSentinel))
+            assertFalse(capture.body.get().contains(otpSentinel))
+        }
+    }
+
     private val operationUuidForTest = "123e4567-e89b-12d3-a456-426614174001"
 
     @Test
@@ -113,23 +360,17 @@ class TutiApiClientHttpContractTest {
     }
 
     @Test
-    fun billsHelperRemainsAnInquiryWhileDirectPanInquiryFailsClosed() {
+    fun retiredBillInquiryHelpersFailClosedBeforeHttp() {
         withServer { serverUrl, capture ->
             val client = TutiApiClient(serverURL = serverUrl)
-            val error = AtomicReference<Throwable?>(null)
 
-            val billsLatch = CountDownLatch(1)
-            client.getBills(
-                BillInfo(phone = "0912345678", payeeId = "0010010002"),
-                onResponse = { billsLatch.countDown() },
-                onError = { _, ex ->
-                    error.set(AssertionError("getBills failed", ex))
-                    billsLatch.countDown()
-                },
-            )
-            waitFor(billsLatch)
-            assertNull(error.get())
-            assertEquals("/consumer/bills", capture.path.get())
+            assertThrows(OpaqueCardOperationRequiredException::class.java) {
+                client.getBills(
+                    BillInfo(phone = "0912345678", payeeId = "0010010002"),
+                    onResponse = {},
+                    onError = { _, _ -> },
+                )
+            }
 
             val request = EBSRequest().apply {
                 pan = "6392561234567890"
@@ -145,7 +386,10 @@ class TutiApiClientHttpContractTest {
                     onError = { _, _ -> },
                 )
             }
-            assertEquals("/consumer/bills", capture.path.get())
+            assertFalse(capture.requestArrived.await(500, TimeUnit.MILLISECONDS))
+            assertEquals(0, capture.requestCount.get())
+            assertEquals("", capture.path.get())
+            assertEquals("", capture.body.get())
         }
     }
 
@@ -573,6 +817,8 @@ class TutiApiClientHttpContractTest {
     }
 
     private data class Capture(
+        val requestArrived: CountDownLatch = CountDownLatch(1),
+        val requestCount: AtomicInteger = AtomicInteger(0),
         val method: AtomicReference<String> = AtomicReference(""),
         val path: AtomicReference<String> = AtomicReference(""),
         val query: AtomicReference<String> = AtomicReference(""),
@@ -592,11 +838,14 @@ class TutiApiClientHttpContractTest {
         }
     }
 
-    private fun withServer(block: (String, Capture) -> Unit) {
+    private fun withServer(
+        requestHandler: (HttpExchange, Capture) -> Unit = { exchange, capture -> handle(exchange, capture) },
+        block: (String, Capture) -> Unit,
+    ) {
         val capture = Capture()
         val server = HttpServer.create(InetSocketAddress(0), 0)
         server.createContext("/") { exchange ->
-            handle(exchange, capture)
+            requestHandler(exchange, capture)
         }
         server.start()
         try {
@@ -608,17 +857,15 @@ class TutiApiClientHttpContractTest {
     }
 
     private fun handle(exchange: HttpExchange, capture: Capture) {
-        capture.method.set(exchange.requestMethod)
-        capture.path.set(exchange.requestURI.path)
-        capture.query.set(exchange.requestURI.rawQuery ?: "")
-        capture.body.set(exchange.requestBody.bufferedReader().use { it.readText() })
-        capture.headers.set(exchange.requestHeaders.toMap())
+        captureRequest(exchange, capture)
 
         val responseBody = when (exchange.requestURI.path) {
             "/consumer/login" -> """{"authorization":"token","user":{"ID":1,"mobile":"0912345678"}}"""
             "/consumer/bills" -> """{"ebs_response":{},"due_amount":{"amount":"10"}}"""
             "/consumer/bill_inquiry" -> """{"ebs_response":{}}"""
             "/consumer/transactions" -> "[]"
+            "/consumer/submit_contacts" ->
+                """[{"user_id":42,"name":"Alpha Tester","mobile":"0912345678"}]"""
             "/consumer/cards/enrollment-intents" ->
                 """{"enrollment_id":"123e4567-e89b-12d3-a456-426614174010","rail_uuid":"123e4567-e89b-12d3-a456-426614174011","expires_at":"2026-07-18T20:10:30.123456Z","rail_key":{"algorithm":"rsa_pkcs1_v1_5","key_id":"$TEST_EBS_KEY_ID","public_key":"$TEST_EBS_PUBLIC_KEY"}}"""
             "/consumer/cards/enrollment-intents/123e4567-e89b-12d3-a456-426614174010/confirm" ->
@@ -640,6 +887,16 @@ class TutiApiClientHttpContractTest {
         val bytes = responseBody.toByteArray()
         exchange.sendResponseHeaders(200, bytes.size.toLong())
         exchange.responseBody.use { it.write(bytes) }
+    }
+
+    private fun captureRequest(exchange: HttpExchange, capture: Capture) {
+        capture.requestCount.incrementAndGet()
+        capture.method.set(exchange.requestMethod)
+        capture.path.set(exchange.requestURI.path)
+        capture.query.set(exchange.requestURI.rawQuery ?: "")
+        capture.body.set(exchange.requestBody.bufferedReader().use { it.readText() })
+        capture.headers.set(exchange.requestHeaders.toMap())
+        capture.requestArrived.countDown()
     }
 
     private fun waitFor(latch: CountDownLatch) {

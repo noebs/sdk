@@ -52,57 +52,9 @@ tutiApiClient.start(
 3. Depending on which services you are using, some services need to be authenticated first, we do that this way:
 `tutiApiClient.authToken = token`
 
-4. You are good to go now, let's start by a simple request that is getting (no)ebs public key:
-But before that **most** of function signatures are this way, only varies a few parameters
-
-```kotlin
-public void getPublicKey(EBSRequest ebsRequest, TutiApiClient.ResponseCallable<TutiResponse> onResponse, TutiApiClient.ErrorCallable<TutiResponse> onError)
-```
-
-Now, let's try to use that API:
-
-```kotlin
-client.getPublicKey(com.tuti.api.ebs.EBSRequest(), { response, _ ->
-            run {
-                if (response != null) {
-                    Log.i("Public key response", response.ebsResponse.pubKeyValue)
-                }
-            }
-        }, { error, exception, rawResponse ->
-        run {
-            // You can log exceptions here
-            Log.i("NOEBS", exception.stackTrace)
-        }  
-        })
-
-```
-
-**NOTES**
-
-Some logic needs to run within the main thread, e.g., if you want to show a toast, or navigate to a new fragment, for that we simply update the code as following:
-
-```kotlin
-client.getPublicKey(com.tuti.api.ebs.EBSRequest(), { response, _ ->
-            run {
-                if (response != null) {
-                    Log.i("Public key response", response.ebsResponse.pubKeyValue)
-                }
-            }
-        }, { error, exception, rawResponse ->
-        run {
-            Handler(Looper.getMainLooper()).post {
-              Toast.makeText(
-                        applicationContext,
-                        "Key downloading failed. Code: " + error?.code,
-                        Toast.LENGTH_SHORT
-                    ).show()
-            }
-            Log.i("NOEBS", exception.stackTrace)
-        }  
-        })
-```
-
-Note how the log is running outside the main looper, while the toast runs within the main thread's.
+4. Use the typed APIs exposed by `client.cards` and `client.wallet`. Opaque card enrollment returns
+its own short-lived, operation-bound rail key; applications must not fetch a generic key and build
+an `EBSRequest` containing PAN or IPIN fields.
 
 ### HTTP Logging
 
@@ -113,6 +65,11 @@ import okhttp3.logging.HttpLoggingInterceptor
 
 TutiApiClient.setHttpLoggingLevel(HttpLoggingInterceptor.Level.BASIC)
 ```
+
+SDK transport is limited to the configured `serverURL` and `noebsServer` origins. Remote bases
+must use HTTPS, WebSockets must use WSS, and redirects are not followed. Plain HTTP/WS is accepted
+only for exact loopback hosts (`localhost`, `127.0.0.1`, or `::1`) so local capture tests remain
+possible without creating a production cleartext escape hatch.
 
 ### Opaque card enrollment and management
 
@@ -144,6 +101,10 @@ log, place in navigation state, or reuse it as card identity. Rename, retire, an
 accept `CardRef(cardId)` and never accept a PAN selector. Legacy PAN card helpers throw
 `OpaqueCardOperationRequiredException` before network I/O.
 
+Standalone IPIN generation, generic beneficiaries, configured-PAN bills, PAN-backed payment
+tokens/requests, and generic `EBSRequest` key helpers are also terminal. Their source-compatible
+methods throw `OpaqueCardOperationRequiredException` synchronously and make no HTTP request.
+
 The first funded opaque-card operation is balance inquiry. Persist its `OperationIdentity` before
 the first request and reuse it after a timeout; the SDK binds the encrypted IPIN block to that same
 UUID and rejects a retry with another `card_id` locally.
@@ -161,6 +122,23 @@ client.cards.balance(request, onBalance, onError)
 
 Do not persist the clear IPIN, encrypted block, or complete request. The response exposes only the
 typed `available` and `ledger` amounts; it never exposes arbitrary rail fields.
+
+### Chat contact resolution
+
+Resolve phone-book entries to tenant-scoped numeric Chat identities with separate request and
+response types. A resolved `user_id` can never be serialized by the strict request type.
+
+```kotlin
+client.syncChatContacts(
+    contacts = listOf(ChatContactRequest(name = "Alpha Tester", mobile = "0912345678")),
+    onResponse = { contacts -> contacts.forEach { println(it.userId) } },
+    onError = onError,
+)
+```
+
+The deprecated `syncContacts(List<Contact>, ...)` method is terminal and throws
+`ChatStableIdentityRequiredException` before HTTP because its response cannot provide a stable
+tenant-scoped identity.
 
 # Wallet API (v1)
 

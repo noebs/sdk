@@ -4,9 +4,8 @@
 package com.tuti
 
 import com.tuti.api.TutiApiClient
-import com.tuti.api.authentication.SignInRequest
 import com.tuti.api.authentication.SignInResponse
-import com.tuti.api.data.PaymentRequest
+import com.tuti.model.SignInRequest
 
 object Library {
     var jwt: String? = null
@@ -16,10 +15,6 @@ object Library {
         val client = TutiApiClient()
         val tutiUsername = System.getenv("tuti_username") ?: error("missing env var: tuti_username")
         val tutiPassword = System.getenv("tuti_password") ?: error("missing env var: tuti_password")
-        val tutiCardPan = System.getenv("tuti_card_pan") ?: error("missing env var: tuti_card_pan")
-        // Optional env vars (kept for parity with other SDK examples):
-        // val tutiCardExpDate = System.getenv("tuti_card_exp_date") ?: ""
-        // val tutiCardIpin = System.getenv("tuti_card_ipin") ?: ""
         client.SignIn(SignInRequest(
             mobile = tutiUsername,
             password = tutiPassword
@@ -27,14 +22,11 @@ object Library {
             onResponse = { signInResponse: SignInResponse ->
                 val token = signInResponse.authorizationJWT
                 client.authToken = token
-                client.sendPaymentRequest(
-                    paymentRequest = PaymentRequest(
-                        mobile = tutiUsername,
-                        toCard = tutiCardPan,
-                        amount = 1L
-                    ),
-                    onResponse = {tutiResponse -> println(tutiResponse.uuid) },
-                    onError = { _, _ ->  }
+                client.cards.list(
+                    onResponse = { cards ->
+                        cards.forEach { println("${it.cardId}: ${it.maskedPan}") }
+                    },
+                    onError = { _, error -> error?.printStackTrace() },
                 )
             },
             onError = { _, _ -> })

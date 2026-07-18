@@ -26,6 +26,9 @@ This SDK has been modernized and contains breaking changes. Highlights below are
 - `TutiApiClient.authToken` is now `@Volatile` to avoid stale reads across threads.
 - HTTP logging is disabled by default. BASIC/HEADERS may be enabled explicitly; credential headers
   are redacted, sensitive enrollment requests bypass logging, and BODY logging is rejected.
+- The generic authenticated `sendRequest(...)` escape hatch is now private. HTTP and WebSocket
+  targets must match a configured server origin, redirects are disabled, and non-loopback traffic
+  requires HTTPS/WSS. Exact loopback hosts remain available for local tests.
 
 ## Default Base URL
 
@@ -60,13 +63,38 @@ This SDK has been modernized and contains breaking changes. Highlights below are
 - `SignupWithCard`, legacy issuance/completion, `getCards`, PAN card CRUD, `getUserCard(mobile)`, and
   PAN-based main-card selection now fail before HTTP. There is no fallback to retired routes.
 
+## Retired Sensitive Compatibility Contracts
+
+- Standalone `generateIpin`/`confirmIpinGeneration` and PAN-selected `Otp2FA` are terminal. IPIN is
+  established only inside the transient opaque enrollment flow.
+- Generic `NoebsBeneficiary` CRUD, configured-PAN bills, PAN-backed payment tokens and payment
+  requests are terminal until typed opaque recipient/card contracts replace them.
+- The old `getPublicKey(EBSRequest)` and `getIpinPublicKey(EBSRequest)` helpers are terminal because
+  their mutable request type can carry PAN and IPIN fields. Opaque enrollment supplies its bound
+  rail key in `CardEnrollmentIntent`.
+- These methods remain source-compatible and throw `OpaqueCardOperationRequiredException`
+  synchronously, before serialization or HTTP.
+- Direct entertainment reads are also terminal until the service is exposed through the configured
+  Noebs origin. They throw `ExternalServiceRetiredException` instead of contacting a hardcoded
+  third-party origin.
+
 ## Wallet Idempotency Keys
 
 - `P2PTransferRequest`, `DepositRequest`, `WithdrawalRequest`, and `ManualTransferRequest` now
   require an explicit canonical lowercase UUID in `idempotencyKey`; the empty defaults were
   removed. Persist and reuse that UUID for an exact retry.
 
+## Chat Contact Resolution
+
+- Use `syncChatContacts(List<ChatContactRequest>, ...)`. The request serializes only `name` and
+  `mobile`; the typed `ResolvedChatContact` response adds a positive tenant-scoped `userId`.
+- The deprecated `syncContacts(List<Contact>, ...)` remains source-compatible but throws
+  `ChatStableIdentityRequiredException` synchronously. It cannot expose the numeric identity
+  required by Chat v2 and never sends its mobile-only contract over HTTP.
+
 ## Crypto/Base64
 
 - IPIN encryption code no longer depends on jersey Base64 or commons-codec.
   - Base64 handling uses Okio (`okio.ByteString`) instead.
+- The deprecated Java `IPIN.getIPINBlock` bridge now delegates to the validated generator. Invalid
+  keys and cipher failures throw; clear input is never returned or printed.
